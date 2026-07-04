@@ -8,6 +8,7 @@ import (
 
 	"github.com/gogf/gf/v2/frame/g"
 
+	"gf-eshop/internal/dao"
 	"gf-eshop/internal/model/entity"
 )
 
@@ -18,6 +19,33 @@ const (
 
 func cacheKeyCategoryAll() string          { return "category:all" }
 func cacheKeyCategory(id int64) string     { return fmt.Sprintf("category:%d", id) }
+
+// Warmup 启动预热：加载全量类目到 Redis
+func Warmup(ctx context.Context) {
+	var list []*entity.Categories
+	if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).Scan(&list); err != nil {
+		g.Log().Warningf(ctx, "category cache warmup query failed: %v", err)
+		return
+	}
+	if len(list) == 0 {
+		return
+	}
+	data, err := json.Marshal(list)
+	if err != nil {
+		g.Log().Warningf(ctx, "category cache warmup marshal failed: %v", err)
+		return
+	}
+	if _, err := g.Redis().Do(ctx, "SETEX", cacheKeyCategoryAll(), int(categoryAllTTL.Seconds()), string(data)); err != nil {
+		g.Log().Warningf(ctx, "category cache warmup set failed: %v", err)
+		return
+	}
+	// 顺便预热单条缓存
+	for _, c := range list {
+		item, _ := json.Marshal(c)
+		g.Redis().Do(ctx, "SETEX", cacheKeyCategory(c.Id), int(categoryEntityTTL.Seconds()), string(item))
+	}
+	g.Log().Infof(ctx, "category cache warmed up: %d items", len(list))
+}
 
 // getCategoryAllCache 获取全量类目列表缓存
 func getCategoryAllCache(ctx context.Context) ([]*entity.Categories, error) {
@@ -37,7 +65,7 @@ func setCategoryAllCache(ctx context.Context, list []*entity.Categories) error {
 	if err != nil {
 		return err
 	}
-	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyCategoryAll(), int(categoryAllTTL.Seconds()), data)
+	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyCategoryAll(), int(categoryAllTTL.Seconds()), string(data))
 	return err
 }
 
@@ -63,7 +91,7 @@ func setCategoryEntityCache(ctx context.Context, c *entity.Categories) error {
 	if err != nil {
 		return err
 	}
-	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyCategory(c.Id), int(categoryEntityTTL.Seconds()), data)
+	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyCategory(c.Id), int(categoryEntityTTL.Seconds()), string(data))
 	return err
 }
 

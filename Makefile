@@ -23,3 +23,8 @@ run.prod:
 .PHONY: build
 build:
 	@gf build -ew
+
+
+stop:
+	@echo "Stopping app on :8000..."
+	-@lsof -ti :8000 | xargs kill -9 2>/dev/null

@@ -12,6 +12,8 @@ import (
 	categoryBrands "gf-eshop/internal/controller/category_brands"
 
 	"gf-eshop/internal/controller/hello"
+	brandsLogic "gf-eshop/internal/logic/brands"
+	categoriesLogic "gf-eshop/internal/logic/categories"
 )
 
 var (
@@ -20,6 +22,10 @@ var (
 		Usage: "main",
 		Brief: "start http server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
+			// 启动时缓存预热
+			brandsLogic.Warmup(ctx)
+			categoriesLogic.Warmup(ctx)
+
 			s := g.Server()
 			s.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(ghttp.MiddlewareHandlerResponse)

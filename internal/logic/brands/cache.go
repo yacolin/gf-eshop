@@ -8,6 +8,7 @@ import (
 
 	"github.com/gogf/gf/v2/frame/g"
 
+	"gf-eshop/internal/dao"
 	"gf-eshop/internal/model/entity"
 )
 
@@ -18,6 +19,33 @@ const (
 
 func cacheKeyBrandAll() string          { return "brand:all" }
 func cacheKeyBrand(id int64) string     { return fmt.Sprintf("brand:%d", id) }
+
+// Warmup 启动预热：加载全量品牌到 Redis
+func Warmup(ctx context.Context) {
+	var list []*entity.Brands
+	if err := dao.Brands.Ctx(ctx).OrderAsc(dao.Brands.Columns().SortOrder).Scan(&list); err != nil {
+		g.Log().Warningf(ctx, "brand cache warmup query failed: %v", err)
+		return
+	}
+	if len(list) == 0 {
+		return
+	}
+	data, err := json.Marshal(list)
+	if err != nil {
+		g.Log().Warningf(ctx, "brand cache warmup marshal failed: %v", err)
+		return
+	}
+	if _, err := g.Redis().Do(ctx, "SETEX", cacheKeyBrandAll(), int(brandAllTTL.Seconds()), string(data)); err != nil {
+		g.Log().Warningf(ctx, "brand cache warmup set failed: %v", err)
+		return
+	}
+	// 顺便预热单条缓存
+	for _, b := range list {
+		item, _ := json.Marshal(b)
+		g.Redis().Do(ctx, "SETEX", cacheKeyBrand(b.Id), int(brandEntityTTL.Seconds()), string(item))
+	}
+	g.Log().Infof(ctx, "brand cache warmed up: %d items", len(list))
+}
 
 // getBrandAllCache 获取全量品牌列表缓存
 func getBrandAllCache(ctx context.Context) ([]*entity.Brands, error) {
@@ -37,7 +65,7 @@ func setBrandAllCache(ctx context.Context, list []*entity.Brands) error {
 	if err != nil {
 		return err
 	}
-	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyBrandAll(), int(brandAllTTL.Seconds()), data)
+	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyBrandAll(), int(brandAllTTL.Seconds()), string(data))
 	return err
 }
 
@@ -63,7 +91,7 @@ func setBrandEntityCache(ctx context.Context, b *entity.Brands) error {
 	if err != nil {
 		return err
 	}
-	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyBrand(b.Id), int(brandEntityTTL.Seconds()), data)
+	_, err = g.Redis().Do(ctx, "SETEX", cacheKeyBrand(b.Id), int(brandEntityTTL.Seconds()), string(data))
 	return err
 }
 
