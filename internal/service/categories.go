@@ -8,6 +8,10 @@ import (
 
 type ICategories interface {
 	List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error)
+	All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error)
+	Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRes, err error)
+	Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error)
+	Level(ctx context.Context, req *v1.LevelReq) (res *v1.LevelRes, err error)
 	Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error)
 	Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error)
 	Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error)

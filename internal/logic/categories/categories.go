@@ -63,6 +63,61 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 	}, nil
 }
 
+// All 所有类目列表
+func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+	var (
+		m    = dao.Categories.Ctx(ctx)
+		list []*entity.Categories
+	)
+	err = m.OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.AllRes{List: list}, nil
+}
+
+// Root 根类目列表
+func (s *sCategories) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRes, err error) {
+	var (
+		m    = dao.Categories.Ctx(ctx)
+		list []*entity.Categories
+	)
+	err = m.Where(dao.Categories.Columns().ParentId, 0).OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.RootRes{List: list}, nil
+}
+
+
+// Children 子类目列表
+func (s *sCategories) Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error) {
+	var (
+		m    = dao.Categories.Ctx(ctx)
+		list []*entity.Categories
+	)
+	err = m.Where(dao.Categories.Columns().ParentId, req.Id).OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ChildrenRes{List: list}, nil
+}
+
+// Level 层级类目列表
+func (s *sCategories) Level(ctx context.Context, req *v1.LevelReq) (res *v1.LevelRes, err error) {
+	var (
+		m    = dao.Categories.Ctx(ctx)
+		list []*entity.Categories
+	)
+	err = m.Where(dao.Categories.Columns().Level, req.Level).OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.LevelRes{List: list}, nil
+}
+
+
+
 // Tree 类目树形结构
 func (s *sCategories) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error) {
 	var (

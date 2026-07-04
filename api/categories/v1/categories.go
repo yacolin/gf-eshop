@@ -20,6 +20,45 @@ type ListRes struct {
 	Total int                  `json:"total"`
 }
 
+// ---------- All ----------
+type AllReq struct {
+	g.Meta `path:"/categories/all" tags:"Categories" method:"get" summary:"所有类目"`
+}
+type AllRes struct {
+	List []*entity.Categories `json:"list"`
+}
+
+// ---------- Root ----------
+type RootReq struct {
+	g.Meta `path:"/categories/root" tags:"Categories" method:"get" summary:"根类目"`
+}
+type RootRes struct {
+	List []*entity.Categories `json:"list"`
+}
+
+
+// ---------- Children ----------
+type ChildrenReq struct {
+	g.Meta `path:"/categories/{id}/children" tags:"Categories" method:"get" summary:"子类目"`
+	Id     int64 `json:"id"`
+}
+
+type ChildrenRes struct {
+	List []*entity.Categories `json:"list"`
+}
+
+
+// ---------- Level ----------
+type LevelReq struct {
+	g.Meta `path:"/categories/level/{level}" tags:"Categories" method:"get" summary:"层级类目"`
+	Level     int64 `json:"level"`
+}
+
+type LevelRes struct {
+	List []*entity.Categories `json:"list"`
+}
+
+
 // ---------- Tree ----------
 type TreeReq struct {
 	g.Meta `path:"/categories/tree" tags:"Categories" method:"get" summary:"类目树形结构"`

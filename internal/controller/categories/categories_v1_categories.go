@@ -11,6 +11,21 @@ func (c *ControllerV1) List(ctx context.Context, req *v1.ListReq) (res *v1.ListR
 	return service.Categories().List(ctx, req)
 }
 
+func (c *ControllerV1) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+	return service.Categories().All(ctx, req)
+}
+
+func (c *ControllerV1) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRes, err error) {
+	return service.Categories().Root(ctx, req)
+}
+
+func (c *ControllerV1) Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error) {
+	return service.Categories().Children(ctx, req)
+}
+
+func (c *ControllerV1) Level(ctx context.Context, req *v1.LevelReq) (res *v1.LevelRes, err error) {
+	return service.Categories().Level(ctx, req)
+}
 func (c *ControllerV1) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error) {
 	return service.Categories().Tree(ctx, req)
 }
