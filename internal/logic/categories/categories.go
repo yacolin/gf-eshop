@@ -5,6 +5,7 @@ import (
 
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
 
 	"gf-eshop/api/categories/v1"
 	"gf-eshop/internal/dao"
@@ -63,8 +64,14 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 	}, nil
 }
 
-// All 所有类目列表
+// All 所有类目列表（缓存旁路）
 func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+	// 尝试从缓存读取
+	cached, err := getCategoryAllCache(ctx)
+	if err == nil && cached != nil {
+		return &v1.AllRes{List: cached}, nil
+	}
+
 	var (
 		m    = dao.Categories.Ctx(ctx)
 		list []*entity.Categories
@@ -73,6 +80,12 @@ func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, 
 	if err != nil {
 		return nil, err
 	}
+
+	// 回写缓存
+	if err := setCategoryAllCache(ctx, list); err != nil {
+		g.Log().Warning(ctx, "setCategoryAllCache failed: %v", err)
+	}
+
 	return &v1.AllRes{List: list}, nil
 }
 
@@ -88,7 +101,6 @@ func (s *sCategories) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRe
 	}
 	return &v1.RootRes{List: list}, nil
 }
-
 
 // Children 子类目列表
 func (s *sCategories) Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error) {
@@ -115,8 +127,6 @@ func (s *sCategories) Level(ctx context.Context, req *v1.LevelReq) (res *v1.Leve
 	}
 	return &v1.LevelRes{List: list}, nil
 }
-
-
 
 // Tree 类目树形结构
 func (s *sCategories) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error) {
@@ -149,8 +159,14 @@ func buildTree(nodes []*entity.Categories, parentId int64) []*v1.TreeItem {
 	return tree
 }
 
-// Detail 类目详情
+// Detail 类目详情（缓存旁路）
 func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error) {
+	// 尝试从缓存读取
+	cached, err := getCategoryEntityCache(ctx, req.Id)
+	if err == nil && cached != nil {
+		return &v1.DetailRes{Categories: cached}, nil
+	}
+
 	var entity *entity.Categories
 	err = dao.Categories.Ctx(ctx).Where(dao.Categories.Columns().Id, req.Id).Scan(&entity)
 	if err != nil {
@@ -159,6 +175,12 @@ func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.De
 	if entity == nil {
 		return nil, gerror.NewCode(gcode.CodeNotFound, "类目不存在")
 	}
+
+	// 回写缓存
+	if err := setCategoryEntityCache(ctx, entity); err != nil {
+		g.Log().Warning(ctx, "setCategoryEntityCache failed: %v", err)
+	}
+
 	return &v1.DetailRes{Categories: entity}, nil
 }
 
@@ -177,6 +199,8 @@ func (s *sCategories) Create(ctx context.Context, req *v1.CreateReq) (res *v1.Cr
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
+	// 缓存失效
+	delCategoryAllCache(ctx)
 	return &v1.CreateRes{Id: id}, nil
 }
 
@@ -201,6 +225,9 @@ func (s *sCategories) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.Up
 	if err != nil {
 		return nil, err
 	}
+	// 缓存失效
+	delCategoryEntityCache(ctx, req.Id)
+	delCategoryAllCache(ctx)
 	return &v1.UpdateRes{}, nil
 }
 
@@ -210,5 +237,8 @@ func (s *sCategories) Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.De
 	if err != nil {
 		return nil, err
 	}
+	// 缓存失效
+	delCategoryEntityCache(ctx, req.Id)
+	delCategoryAllCache(ctx)
 	return &v1.DeleteRes{}, nil
 }
