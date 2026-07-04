@@ -27,7 +27,7 @@ var (
 					hello.NewV1(),
 				)
 			})
-			s.Group("/api", func(group *ghttp.RouterGroup) {
+			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
 				group.Middleware(ghttp.MiddlewareHandlerResponse)
 				group.Bind(
 					brands.NewV1(),

@@ -11,8 +11,8 @@ type ListReq struct {
 	g.Meta `path:"/categories" tags:"Categories" method:"get" summary:"类目列表（平铺）"`
 
 	Page     int `json:"page"`     // 页码，默认1
-	PageSize int `json:"pageSize"` // 每页条数，默认20
-	ParentId int `json:"parentId"` // 按父级ID筛选
+	PageSize int `json:"page_size"` // 每页条数，默认20
+	ParentId int `json:"parent_id"` // 按父级ID筛选
 	Status   int `json:"status"`   // 按状态筛选
 }
 type ListRes struct {
@@ -86,11 +86,11 @@ type CreateReq struct {
 	g.Meta `path:"/categories" tags:"Categories" method:"post" summary:"新增类目"`
 
 	Name      string `json:"name"      v:"required|length:1,100" description:"类目名称"`
-	ParentId  int64  `json:"parentId"  description:"父级ID"`
+	ParentId  int64  `json:"parent_id"  description:"父级ID"`
 	Level     int    `json:"level"     description:"层级"`
 	Path      string `json:"path"      description:"路径"`
-	IconUrl   string `json:"iconUrl"   description:"类目图标"`
-	SortOrder int    `json:"sortOrder" description:"排序"`
+	IconUrl   string `json:"icon_url"   description:"类目图标"`
+	SortOrder int    `json:"sort_order" description:"排序"`
 	Status    int    `json:"status"    description:"状态"`
 }
 type CreateRes struct {
@@ -103,11 +103,11 @@ type UpdateReq struct {
 
 	Id        int64  `json:"id"        v:"required"`
 	Name      string `json:"name"      v:"length:1,100" description:"类目名称"`
-	ParentId  int64  `json:"parentId"  description:"父级ID"`
+	ParentId  int64  `json:"parent_id"  description:"父级ID"`
 	Level     int    `json:"level"     description:"层级"`
 	Path      string `json:"path"      description:"路径"`
-	IconUrl   string `json:"iconUrl"   description:"类目图标"`
-	SortOrder int    `json:"sortOrder" description:"排序"`
+	IconUrl   string `json:"icon_url"   description:"类目图标"`
+	SortOrder int    `json:"sort_order" description:"排序"`
 	Status    int    `json:"status"    description:"状态"`
 }
 type UpdateRes struct{}
