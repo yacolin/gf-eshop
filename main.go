@@ -8,6 +8,7 @@ import (
 
 	"gf-eshop/internal/cmd"
 	_ "gf-eshop/internal/logic/brands"
+	_ "gf-eshop/internal/logic/categories"
 )
 
 func main() {

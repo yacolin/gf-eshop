@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/os/gcmd"
 
 	"gf-eshop/internal/controller/brands"
+	"gf-eshop/internal/controller/categories"
 	"gf-eshop/internal/controller/hello"
 )
 
@@ -28,6 +29,7 @@ var (
 				group.Middleware(ghttp.MiddlewareHandlerResponse)
 				group.Bind(
 					brands.NewV1(),
+					categories.NewV1(),
 				)
 			})
 			s.Run()
