@@ -9,6 +9,8 @@ import (
 
 	"gf-eshop/internal/controller/brands"
 	"gf-eshop/internal/controller/categories"
+	categoryBrands "gf-eshop/internal/controller/category_brands"
+
 	"gf-eshop/internal/controller/hello"
 )
 
@@ -30,6 +32,7 @@ var (
 				group.Bind(
 					brands.NewV1(),
 					categories.NewV1(),
+					categoryBrands.NewV1(),
 				)
 			})
 			s.Run()

@@ -8,7 +8,7 @@ gfcli:
   gen:
     dao:
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "sp_brands,sp_categories"
+        tables: "sp_brands,sp_categories,sp_category_brands"
         removePrefix: "sp_"
         descriptionTag: true
         noModelComment: true

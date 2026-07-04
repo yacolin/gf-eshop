@@ -9,6 +9,7 @@ import (
 	"gf-eshop/internal/cmd"
 	_ "gf-eshop/internal/logic/brands"
 	_ "gf-eshop/internal/logic/categories"
+	_ "gf-eshop/internal/logic/category_brands"
 )
 
 func main() {
