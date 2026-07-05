@@ -24,6 +24,8 @@ type SkusDetailReq struct {
 }
 type SkusDetailRes struct {
 	*entity.Skus
+	AvailableQuantity int64  `json:"available_quantity"`
+	InventoryStatus   string `json:"inventory_status,omitempty"`
 }
 
 type SkusGetByCodeReq struct {
@@ -32,6 +34,8 @@ type SkusGetByCodeReq struct {
 }
 type SkusGetByCodeRes struct {
 	*entity.Skus
+	AvailableQuantity int64  `json:"available_quantity"`
+	InventoryStatus   string `json:"inventory_status,omitempty"`
 }
 
 type SkusCreateReq struct {
@@ -60,21 +64,20 @@ type SkusCreateRes struct {
 type SkusUpdateReq struct {
 	g.Meta `path:"/skus/{id}" tags:"Skus" method:"put" summary:"更新SKU"`
 
-	Id           int64   `json:"id"            v:"required"`
-	SkuCode      string  `json:"sku_code"      v:"length:1,100" description:"商家编码"`
-	Barcode      string  `json:"barcode"       description:"条码"`
-	Price        int64   `json:"price"         description:"销售价(分)"`
-	MarketPrice  int64   `json:"market_price"  description:"划线价(分)"`
-	CostPrice    int64   `json:"cost_price"    description:"成本价(分)"`
-	Weight       float64 `json:"weight"        description:"重量(克)"`
-	Volume       float64 `json:"volume"        description:"体积(cm³)"`
-	Length       float64 `json:"length"        description:"长(cm)"`
-	Width        float64 `json:"width"         description:"宽(cm)"`
-	Height       float64 `json:"height"        description:"高(cm)"`
-	MinPurchaseQty int   `json:"min_purchase_qty" description:"最少购买数量"`
-	MaxPurchaseQty int   `json:"max_purchase_qty" description:"最大购买数量"`
-	Image        string  `json:"image"         description:"SKU图"`
-	Status       int     `json:"status"        description:"状态"`
+	Id             int64    `json:"id"              v:"required"`
+	Price          *int64   `json:"price"           description:"销售价(分)"`
+	MarketPrice    *int64   `json:"market_price"    description:"划线价(分)"`
+	CostPrice      *int64   `json:"cost_price"      description:"成本价(分)"`
+	Status         *int     `json:"status"          description:"1-正常 0-禁用"`
+	Image          *string  `json:"image"           description:"SKU图"`
+	Barcode        *string  `json:"barcode"         description:"条码"`
+	Weight         *float64 `json:"weight"          description:"重量(克)"`
+	Volume         *float64 `json:"volume"          description:"体积(cm³)"`
+	Length         *float64 `json:"length"          description:"长(cm)"`
+	Width          *float64 `json:"width"           description:"宽(cm)"`
+	Height         *float64 `json:"height"          description:"高(cm)"`
+	MinPurchaseQty *int     `json:"min_purchase_qty" description:"最少购买数量"`
+	MaxPurchaseQty *int     `json:"max_purchase_qty" description:"最大购买数量"`
 }
 type SkusUpdateRes struct{}
 
