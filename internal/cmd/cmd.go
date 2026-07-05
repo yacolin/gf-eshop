@@ -26,9 +26,11 @@ import (
 	productDescriptionsCtrl "gf-eshop/internal/controller/product_descriptions"
 	productsCtrl "gf-eshop/internal/controller/products"
 	skusCtrl "gf-eshop/internal/controller/skus"
+	dashboardCtrl "gf-eshop/internal/controller/dashboard"
 	brandsLogic "gf-eshop/internal/logic/brands"
 	categoriesLogic "gf-eshop/internal/logic/categories"
 	productsLogic "gf-eshop/internal/logic/products"
+	_ "gf-eshop/internal/logic/dashboard"
 	"gf-eshop/internal/middleware"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
@@ -41,10 +43,23 @@ var (
 		Usage: "main",
 		Brief: "start http server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
-			// 启动时缓存预热
-			brandsLogic.Warmup(ctx)
-			categoriesLogic.Warmup(ctx)
-			productsLogic.Warmup(ctx)
+				// 启动时缓存预热（并行管线）
+				pipeline := productsLogic.NewWarmupPipeline(
+					productsLogic.NewFuncStage("brands", func(ctx context.Context) (int, error) {
+						brandsLogic.Warmup(ctx)
+						return 0, nil
+					}),
+					productsLogic.NewFuncStage("categories", func(ctx context.Context) (int, error) {
+						categoriesLogic.Warmup(ctx)
+						return 0, nil
+					}),
+					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
+						return productsLogic.Warmup(ctx)
+					}),
+				)
+				pipeline.Run(ctx)
+				// 启动仪表盘定时刷新
+				service.Dashboard().StartPeriodicRefresh(ctx)
 
 			// 创建并启动 WebSocket Hub
 			wsHub := ws.NewHub()
@@ -73,6 +88,7 @@ var (
 					inventoriesCtrl.NewWarehousesV1(),
 					inventoryLogsCtrl.NewV1(),
 					productVersionsCtrl.NewV1(),
+				dashboardCtrl.NewV1(),
 				)
 				group.Group("/staff", func(group *ghttp.RouterGroup) {
 					group.Middleware(authMiddleware)
