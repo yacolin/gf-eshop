@@ -23,6 +23,8 @@ import (
 	_ "gf-eshop/internal/logic/permissions"
 	_ "gf-eshop/internal/logic/roles"
 	_ "gf-eshop/internal/logic/staff"
+	_ "gf-eshop/internal/logic/orders"
+	_ "gf-eshop/internal/logic/payments"
 )
 
 func main() {

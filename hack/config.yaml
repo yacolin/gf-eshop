@@ -28,3 +28,10 @@ gfcli:
         jsonOmitEmpty: true
         descriptionTag: true
         noModelComment: true
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "tx_orders,tx_sub_orders,tx_order_logs,tx_order_items,tx_payments,tx_payment_logs,tx_refunds"
+        removePrefix: "tx_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true

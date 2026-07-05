@@ -32,6 +32,8 @@ import (
 	productsLogic "gf-eshop/internal/logic/products"
 	_ "gf-eshop/internal/logic/dashboard"
 	"gf-eshop/internal/middleware"
+	ordersCtrl "gf-eshop/internal/controller/orders"
+	paymentsCtrl "gf-eshop/internal/controller/payments"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
 	"gf-eshop/utility"
@@ -120,6 +122,10 @@ var (
 					wsCtrl.NewV1(),
 				)
 			})
+			group.Bind(
+				ordersCtrl.NewV1(),
+				paymentsCtrl.NewV1(),
+			)
 		})
 			// WS 升级路由（不使用 MiddlewareHandlerResponse，token 从查询参数获取）
 			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
