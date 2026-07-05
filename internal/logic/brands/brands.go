@@ -22,11 +22,8 @@ func init() {
 
 func (s *sBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error) {
 	var (
-		m      = dao.Brands.Ctx(ctx)
-		list   []*entity.Brands
-		total  int
-		page   = req.Page
-		size   = req.PageSize
+		page = req.Page
+		size = req.PageSize
 	)
 	if page <= 0 {
 		page = 1
@@ -35,7 +32,38 @@ func (s *sBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, e
 		size = 20
 	}
 
-	// Conditions
+	// 无筛选条件时走 Lua 脚本（一次 Redis 往返完成 ZCARD+ZRANGE+MGET）
+	if req.Name == "" && req.FirstLetter == "" && req.Status == 0 {
+		list, total, err := getBrandPage(ctx, page, size)
+		if err == nil && total > 0 {
+			return &v1.ListRes{List: list, Total: total}, nil
+		}
+		// 缓存不完整，单次重建
+		if ctx.Err() != nil {
+			return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+		}
+		ensureBrandCache(ctx)
+		// 重建后重试一次
+		list, total, err = getBrandPage(ctx, page, size)
+		if err == nil && total > 0 {
+			return &v1.ListRes{List: list, Total: total}, nil
+		}
+		// 最终兜底：直接查库
+		var dbAll []*entity.Brands
+		if err := dao.Brands.Ctx(ctx).OrderAsc(dao.Brands.Columns().SortOrder).Scan(&dbAll); err != nil {
+			return nil, err
+		}
+		if len(dbAll) == 0 {
+			return &v1.ListRes{List: make([]*entity.Brands, 0), Total: 0}, nil
+		}
+		return paginateBrands(page, size, dbAll), nil
+	}
+
+	// 有筛选条件时直接查询数据库
+	var (
+		m    = dao.Brands.Ctx(ctx)
+		list []*entity.Brands
+	)
 	if req.Name != "" {
 		m = m.WhereLike(dao.Brands.Columns().Name, "%"+req.Name+"%")
 	}
@@ -46,7 +74,7 @@ func (s *sBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, e
 		m = m.Where(dao.Brands.Columns().Status, req.Status)
 	}
 
-	total, err = m.Count()
+	total, err := m.Count()
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +95,26 @@ func (s *sBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, e
 	}, nil
 }
 
+func paginateBrands(page, size int, all []*entity.Brands) *v1.ListRes {
+	total := len(all)
+	start := (page - 1) * size
+	if start >= total {
+		return &v1.ListRes{List: make([]*entity.Brands, 0), Total: total}
+	}
+	end := start + size
+	if end > total {
+		end = total
+	}
+	return &v1.ListRes{List: all[start:end], Total: total}
+}
+
 func (s *sBrands) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error) {
-	// 尝试从缓存读取
 	cached, err := getBrandEntityCache(ctx, req.Id)
 	if err == nil && cached != nil {
 		return &v1.DetailRes{Brands: cached}, nil
+	}
+	if ctx.Err() != nil {
+		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
 	}
 
 	var entity *entity.Brands
@@ -82,15 +125,10 @@ func (s *sBrands) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.Detail
 	if entity == nil {
 		return nil, gerror.NewCode(gcode.CodeNotFound, "品牌不存在")
 	}
-
-	// 回写缓存
-	if err := setBrandEntityCache(ctx, entity); err != nil {
+	if err := setBrandEntityCache(context.Background(), entity); err != nil {
 		g.Log().Warning(ctx, "setBrandEntityCache failed: %v", err)
 	}
-
-	return &v1.DetailRes{
-		Brands: entity,
-	}, nil
+	return &v1.DetailRes{Brands: entity}, nil
 }
 
 func (s *sBrands) Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error) {
@@ -106,15 +144,9 @@ func (s *sBrands) Create(ctx context.Context, req *v1.CreateReq) (res *v1.Create
 	if err != nil {
 		return nil, err
 	}
-	lastInsertId, err := result.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-	// 缓存失效
-	delBrandAllCache(ctx)
-	return &v1.CreateRes{
-		Id: lastInsertId,
-	}, nil
+	id, _ := result.LastInsertId()
+	addBrandToIndex(context.Background(), id, req.SortOrder)
+	return &v1.CreateRes{Id: id}, nil
 }
 
 func (s *sBrands) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error) {
@@ -138,9 +170,8 @@ func (s *sBrands) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.Update
 	if err != nil {
 		return nil, err
 	}
-	// 缓存失效
-	delBrandEntityCache(ctx, req.Id)
-	delBrandAllCache(ctx)
+	g.Redis().Do(context.Background(), "ZADD", brandIdsKey, encodeBrandScore(req.SortOrder, req.Id), req.Id)
+	delBrandEntityCache(context.Background(), req.Id)
 	return &v1.UpdateRes{}, nil
 }
 
@@ -149,8 +180,7 @@ func (s *sBrands) Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.Delete
 	if err != nil {
 		return nil, err
 	}
-	// 缓存失效
-	delBrandEntityCache(ctx, req.Id)
-	delBrandAllCache(ctx)
+	removeBrandFromIndex(context.Background(), req.Id)
+	delBrandEntityCache(context.Background(), req.Id)
 	return &v1.DeleteRes{}, nil
 }

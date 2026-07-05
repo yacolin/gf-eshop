@@ -3,6 +3,8 @@ package categories
 import (
 	"context"
 
+	"github.com/bytedance/sonic"
+
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -23,11 +25,8 @@ func init() {
 // List 类目平铺列表（支持分页）
 func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error) {
 	var (
-		m     = dao.Categories.Ctx(ctx)
-		list  []*entity.Categories
-		total int
-		page  = req.Page
-		size  = req.PageSize
+		page = req.Page
+		size = req.PageSize
 	)
 	if page <= 0 {
 		page = 1
@@ -36,6 +35,35 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 		size = 20
 	}
 
+	// 无筛选条件时走 Lua 脚本
+	if req.ParentId <= 0 && req.Status <= 0 {
+		list, total, err := getCategoryPage(ctx, page, size)
+		if err == nil && total > 0 {
+			return &v1.ListRes{List: list, Total: total}, nil
+		}
+		if ctx.Err() != nil {
+			return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+		}
+		ensureCategoryCache(ctx)
+		list, total, err = getCategoryPage(ctx, page, size)
+		if err == nil && total > 0 {
+			return &v1.ListRes{List: list, Total: total}, nil
+		}
+		var dbAll []*entity.Categories
+		if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).Scan(&dbAll); err != nil {
+			return nil, err
+		}
+		if len(dbAll) == 0 {
+			return &v1.ListRes{List: make([]*entity.Categories, 0), Total: 0}, nil
+		}
+		return paginateCategories(page, size, dbAll), nil
+	}
+
+	// 有筛选条件时直接查询数据库
+	var (
+		m    = dao.Categories.Ctx(ctx)
+		list []*entity.Categories
+	)
 	if req.ParentId > 0 {
 		m = m.Where(dao.Categories.Columns().ParentId, req.ParentId)
 	}
@@ -43,7 +71,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 		m = m.Where(dao.Categories.Columns().Status, req.Status)
 	}
 
-	total, err = m.Count()
+	total, err := m.Count()
 	if err != nil {
 		return nil, err
 	}
@@ -64,28 +92,57 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 	}, nil
 }
 
-// All 所有类目列表（缓存旁路）
-func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
-	// 尝试从缓存读取
-	cached, err := getCategoryAllCache(ctx)
-	if err == nil && cached != nil {
-		return &v1.AllRes{List: cached}, nil
+func paginateCategories(page, size int, all []*entity.Categories) *v1.ListRes {
+	total := len(all)
+	start := (page - 1) * size
+	if start >= total {
+		return &v1.ListRes{List: make([]*entity.Categories, 0), Total: total}
 	}
+	end := start + size
+	if end > total {
+		end = total
+	}
+	return &v1.ListRes{List: all[start:end], Total: total}
+}
 
-	var (
-		m    = dao.Categories.Ctx(ctx)
-		list []*entity.Categories
-	)
-	err = m.OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list)
-	if err != nil {
+// All 所有类目列表（Lua 全量读取）
+func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+	// ZRANGE 0 -1 一次性拿全部 ID
+	v, err := g.Redis().Do(ctx, "ZRANGE", categoryIdsKey, 0, -1)
+	if err == nil && !v.IsNil() && len(v.Vars()) > 0 {
+		args := make([]interface{}, len(v.Vars()))
+		for i, idv := range v.Vars() {
+			args[i] = cacheKeyCategory(idv.Int64())
+		}
+		mvals, err := g.Redis().Do(ctx, "MGET", args...)
+		if err == nil && !mvals.IsNil() {
+			var list []*entity.Categories
+			for _, mv := range mvals.Vars() {
+				if mv.IsNil() {
+					list = nil
+					break
+				}
+				var c entity.Categories
+				if err := sonic.Unmarshal(mv.Bytes(), &c); err != nil {
+					list = nil
+					break
+				}
+				list = append(list, &c)
+			}
+			if list != nil {
+				return &v1.AllRes{List: list}, nil
+			}
+		}
+	}
+	if ctx.Err() != nil {
+		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+	}
+	ensureCategoryCache(ctx)
+	// 兜底：查 DB
+	var list []*entity.Categories
+	if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list); err != nil {
 		return nil, err
 	}
-
-	// 回写缓存
-	if err := setCategoryAllCache(ctx, list); err != nil {
-		g.Log().Warning(ctx, "setCategoryAllCache failed: %v", err)
-	}
-
 	return &v1.AllRes{List: list}, nil
 }
 
@@ -161,10 +218,12 @@ func buildTree(nodes []*entity.Categories, parentId int64) []*v1.TreeItem {
 
 // Detail 类目详情（缓存旁路）
 func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error) {
-	// 尝试从缓存读取
 	cached, err := getCategoryEntityCache(ctx, req.Id)
 	if err == nil && cached != nil {
 		return &v1.DetailRes{Categories: cached}, nil
+	}
+	if ctx.Err() != nil {
+		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
 	}
 
 	var entity *entity.Categories
@@ -175,12 +234,9 @@ func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.De
 	if entity == nil {
 		return nil, gerror.NewCode(gcode.CodeNotFound, "类目不存在")
 	}
-
-	// 回写缓存
-	if err := setCategoryEntityCache(ctx, entity); err != nil {
+	if err := setCategoryEntityCache(context.Background(), entity); err != nil {
 		g.Log().Warning(ctx, "setCategoryEntityCache failed: %v", err)
 	}
-
 	return &v1.DetailRes{Categories: entity}, nil
 }
 
@@ -199,8 +255,7 @@ func (s *sCategories) Create(ctx context.Context, req *v1.CreateReq) (res *v1.Cr
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
-	// 缓存失效
-	delCategoryAllCache(ctx)
+	addCategoryToIndex(context.Background(), id, req.SortOrder)
 	return &v1.CreateRes{Id: id}, nil
 }
 
@@ -225,9 +280,8 @@ func (s *sCategories) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.Up
 	if err != nil {
 		return nil, err
 	}
-	// 缓存失效
-	delCategoryEntityCache(ctx, req.Id)
-	delCategoryAllCache(ctx)
+	g.Redis().Do(context.Background(), "ZADD", categoryIdsKey, encodeCategoryScore(req.SortOrder, req.Id), req.Id)
+	delCategoryEntityCache(context.Background(), req.Id)
 	return &v1.UpdateRes{}, nil
 }
 
@@ -237,8 +291,7 @@ func (s *sCategories) Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.De
 	if err != nil {
 		return nil, err
 	}
-	// 缓存失效
-	delCategoryEntityCache(ctx, req.Id)
-	delCategoryAllCache(ctx)
+	removeCategoryFromIndex(context.Background(), req.Id)
+	delCategoryEntityCache(context.Background(), req.Id)
 	return &v1.DeleteRes{}, nil
 }

@@ -11,5 +11,6 @@ gfcli:
         tables: "sp_brands,sp_categories,sp_category_brands"
         removePrefix: "sp_"
         jsonCase: "Snake"
+        jsonOmitEmpty: true
         descriptionTag: true
         noModelComment: true
