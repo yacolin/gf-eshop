@@ -15,8 +15,16 @@ func (c *ControllerV1) Detail(ctx context.Context, req *v1.ProductsDetailReq) (r
 	return service.Products().Detail(ctx, req)
 }
 
+func (c *ControllerV1) DetailPure(ctx context.Context, req *v1.ProductsDetailPureReq) (res *v1.ProductsDetailPureRes, err error) {
+	return service.Products().DetailPure(ctx, req)
+}
+
 func (c *ControllerV1) Create(ctx context.Context, req *v1.ProductsCreateReq) (res *v1.ProductsCreateRes, err error) {
 	return service.Products().Create(ctx, req)
+}
+
+func (c *ControllerV1) CreateFull(ctx context.Context, req *v1.ProductsCreateFullReq) (res *v1.ProductsCreateFullRes, err error) {
+	return service.Products().CreateFull(ctx, req)
 }
 
 func (c *ControllerV1) Update(ctx context.Context, req *v1.ProductsUpdateReq) (res *v1.ProductsUpdateRes, err error) {
