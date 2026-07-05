@@ -99,6 +99,7 @@ def test_create_order(base_url, sku_id):
 
     # 2.1 正常创建订单（该接口无需认证）
     r = req("POST", f"{base_url}/api/v1/orders", body={
+        "user_id": 1,
         "items": [{"sku_id": sku_id, "quantity": 2}],
         "consignee": "张三",
         "phone": "13800138000",
@@ -122,12 +123,14 @@ def test_create_order(base_url, sku_id):
 
     # 2.2 创建订单 - 缺少必填参数
     r = req("POST", f"{base_url}/api/v1/orders", body={
+        "user_id": 1,
         "items": [{"sku_id": sku_id, "quantity": 1}],
     })
     check(r.get("code") != 0, "2.2 缺少收货人信息被拒绝")
 
     # 2.3 创建订单 - 空商品列表
     r = req("POST", f"{base_url}/api/v1/orders", body={
+        "user_id": 1,
         "items": [],
         "consignee": "张三",
         "phone": "13800138000",

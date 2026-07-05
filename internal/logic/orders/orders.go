@@ -86,6 +86,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		// 写入主订单
 		orderId, err := tx.Model("tx_orders").InsertAndGetId(g.Map{
 			"order_no":       orderNo,
+			"user_id":        req.UserId,
 			"total_amount":   totalAmount,
 			"pay_amount":     payAmount,
 			"shipping_fee":   0,
@@ -111,11 +112,14 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		// 创建子订单（按商品分组简化处理，默认一个子订单）
 		subOrderNo := generateSubOrderNo()
 		subOrderId, err := tx.Model("tx_sub_orders").InsertAndGetId(g.Map{
-			"sub_order_no":  subOrderNo,
-			"parent_order_id":  orderId,
-			"parent_order_no":  orderNo,
-			"total_amount":  totalAmount,
-			"pay_amount":    payAmount,
+			"sub_order_no":    subOrderNo,
+			"parent_order_id": orderId,
+			"parent_order_no": orderNo,
+			"user_id":         req.UserId,
+			"merchant_id":     0,
+			"total_amount":    totalAmount,
+			"discount_amount": 0,
+			"pay_amount":      payAmount,
 			"shipping_fee":  0,
 			"status":        "pending",
 			"created_at":    gtime.Now(),
@@ -130,6 +134,8 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 				"sub_order_id": subOrderId,
 				"order_id":     orderId,
 				"order_no":     orderNo,
+				"sub_order_no": subOrderNo,
+				"merchant_id":  0,
 				"sku_id":       item.SkuId,
 				"product_id":   item.ProductId,
 				"sku_code":     item.SkuCode,

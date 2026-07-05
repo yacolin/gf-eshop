@@ -7,6 +7,7 @@ import (
 
 type OrdersCreateReq struct {
 	g.Meta `path:"/orders" tags:"Orders" method:"post" summary:"创建订单"`
+	UserId         int64             `json:"user_id"      v:"required" description:"用户ID"`
 	Items          []CreateOrderItem `json:"items"        v:"required" description:"商品列表"`
 	CouponID       *int64            `json:"coupon_id"    description:"优惠券ID"`
 	BuyerRemark    string            `json:"buyer_remark" description:"买家备注" v:"max-length:500"`

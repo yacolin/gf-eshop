@@ -48,16 +48,21 @@ func (s *sPayments) CreatePayment(ctx context.Context, req *v1.PaymentsCreateReq
 	err = dao.Payments.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 写入支付记录
 		paymentId, err := tx.Model("tx_payments").InsertAndGetId(g.Map{
-			"payment_no":     paymentNo,
-			"order_no":       req.OrderNo,
-			"order_id":       order.Id,
-			"order_type":     "order",
-			"amount":         req.Amount,
-			"currency":       "CNY",
-			"payment_method": req.PaymentMethod,
-			"channel":        req.Channel,
-			"status":         "pending",
-			"created_at":     gtime.Now(),
+			"payment_no":      paymentNo,
+			"order_no":        req.OrderNo,
+			"order_id":        order.Id,
+			"merchant_id":     0,
+			"order_type":      "order",
+			"amount":          req.Amount,
+			"currency":        "CNY",
+			"payment_method":  req.PaymentMethod,
+			"channel":         req.Channel,
+			"trade_type":      "native",
+			"idempotency_key": paymentNo,
+			"status":          "pending",
+			"client_ip":       "",
+			"channel_response": "",
+			"created_at":      gtime.Now(),
 		})
 		if err != nil {
 			return err
@@ -65,11 +70,14 @@ func (s *sPayments) CreatePayment(ctx context.Context, req *v1.PaymentsCreateReq
 
 		// 写入支付日志
 		_, err = tx.Model("tx_payment_logs").Insert(g.Map{
-			"payment_id":  paymentId,
-			"payment_no":  paymentNo,
-			"action":      "create",
-			"status":      "pending",
-			"created_at":  gtime.Now(),
+			"payment_id":   paymentId,
+			"payment_no":   paymentNo,
+			"channel":      req.Channel,
+			"action":       "create",
+			"status":       "pending",
+			"request_body":  "",
+			"response_body": "",
+			"created_at":   gtime.Now(),
 		})
 		if err != nil {
 			return err
@@ -123,6 +131,7 @@ func (s *sPayments) HandleCallback(ctx context.Context, req *v1.PaymentsCallback
 			"transaction_id": req.TransactionID,
 			"action":         "pay_callback",
 			"request_body":   req.RawBody,
+			"response_body":  "",
 			"status":         req.Status,
 			"created_at":     gtime.Now(),
 		})
@@ -200,15 +209,19 @@ func (s *sPayments) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) 
 	err = dao.Payments.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		// 写入退款记录
 		refundId, err := tx.Model("tx_refunds").InsertAndGetId(g.Map{
-			"refund_no":   refundNo,
-			"payment_no":  req.PaymentNo,
-			"order_no":    payment.OrderNo,
-			"order_id":    payment.OrderId,
-			"amount":      req.Amount,
-			"reason":      req.Reason,
-			"status":      "pending",
-			"applied_at":  gtime.Now(),
-			"created_at":  gtime.Now(),
+			"refund_no":         refundNo,
+			"payment_id":        payment.Id,
+			"payment_no":        req.PaymentNo,
+			"order_no":          payment.OrderNo,
+			"order_id":          payment.OrderId,
+			"merchant_id":       0,
+			"amount":            req.Amount,
+			"reason":            req.Reason,
+			"status":            "pending",
+			"channel_refund_id": "",
+			"channel_response":  "",
+			"applied_at":        gtime.Now(),
+			"created_at":        gtime.Now(),
 		})
 		if err != nil {
 			return err
@@ -216,11 +229,15 @@ func (s *sPayments) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) 
 
 		// 写入支付日志
 		_, err = tx.Model("tx_payment_logs").Insert(g.Map{
-			"payment_id": payment.Id,
-			"payment_no": payment.PaymentNo,
-			"action":     "refund_create",
-			"status":     "pending",
-			"created_at": gtime.Now(),
+			"payment_id":    payment.Id,
+			"payment_no":    payment.PaymentNo,
+			"channel":       "",
+			"transaction_id": "",
+			"action":        "refund_create",
+			"status":        "pending",
+			"request_body":  "",
+			"response_body": "",
+			"created_at":    gtime.Now(),
 		})
 		if err != nil {
 			return err
