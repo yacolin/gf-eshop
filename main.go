@@ -11,6 +11,8 @@ import (
 	_ "gf-eshop/internal/logic/brands"
 	_ "gf-eshop/internal/logic/categories"
 	_ "gf-eshop/internal/logic/category_brands"
+	_ "gf-eshop/internal/logic/permissions"
+	_ "gf-eshop/internal/logic/roles"
 	_ "gf-eshop/internal/logic/staff"
 )
 

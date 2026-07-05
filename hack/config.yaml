@@ -15,7 +15,7 @@ gfcli:
         descriptionTag: true
         noModelComment: true
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "sys_staff"
+        tables: "sys_staff,sys_permissions,sys_roles,sys_role_permissions,sys_staff_roles"
         removePrefix: "sys_"
         jsonCase: "Snake"
         jsonOmitEmpty: true

@@ -48,3 +48,11 @@ type StaffProfileRes struct {
 	Status      int    `json:"status"      description:"状态"`
 	LastLoginIp string `json:"last_login_ip" description:"最后登录IP"`
 }
+
+type StaffPermissionsReq struct {
+	g.Meta `path:"/permissions" tags:"Staff" method:"get" summary:"获取当前用户权限和角色"`
+}
+type StaffPermissionsRes struct {
+	Roles       []string `json:"roles"       description:"角色名称列表"`
+	Permissions []string `json:"permissions" description:"权限标识列表"`
+}

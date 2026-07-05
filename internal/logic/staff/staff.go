@@ -179,4 +179,19 @@ func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.
 	}, nil
 }
 
+func (s *sStaff) Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (res *v1.StaffPermissionsRes, err error) {
+	claims := utility.GetStaffClaims(ctx)
+	if claims == nil {
+		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+	}
+	perms, roles, err := service.Roles().GetPermissions(ctx, claims.StaffId)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.StaffPermissionsRes{
+		Roles:       roles,
+		Permissions: perms,
+	}, nil
+}
+
 

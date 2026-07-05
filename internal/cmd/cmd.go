@@ -10,11 +10,14 @@ import (
 	"gf-eshop/internal/controller/brands"
 	"gf-eshop/internal/controller/categories"
 	categoryBrands "gf-eshop/internal/controller/category_brands"
+	"gf-eshop/internal/controller/permissions"
+	"gf-eshop/internal/controller/roles"
 	staffCtrl "gf-eshop/internal/controller/staff"
 
 	"gf-eshop/internal/controller/hello"
 	brandsLogic "gf-eshop/internal/logic/brands"
 	categoriesLogic "gf-eshop/internal/logic/categories"
+	"gf-eshop/internal/middleware"
 	"gf-eshop/utility"
 )
 
@@ -46,6 +49,18 @@ var (
 					group.Middleware(authMiddleware)
 					group.Bind(
 						staffCtrl.NewV1(),
+					)
+				})
+				group.Group("/permissions", func(group *ghttp.RouterGroup) {
+					group.Middleware(authMiddleware)
+					group.Bind(
+						permissions.NewV1(),
+					)
+				})
+				group.Group("/roles", func(group *ghttp.RouterGroup) {
+					group.Middleware(authMiddleware, middleware.RequireAdmin)
+					group.Bind(
+						roles.NewV1(),
 					)
 				})
 			})

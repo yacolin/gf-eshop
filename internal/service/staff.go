@@ -10,6 +10,7 @@ type IStaff interface {
 	RefreshToken(ctx context.Context, req *v1.StaffRefreshTokenReq) (res *v1.StaffRefreshTokenRes, err error)
 	Logout(ctx context.Context, req *v1.StaffLogoutReq) (res *v1.StaffLogoutRes, err error)
 	Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error)
+	Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (res *v1.StaffPermissionsRes, err error)
 }
 
 var localStaff IStaff

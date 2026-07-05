@@ -22,3 +22,7 @@ func (c *ControllerV1) Logout(ctx context.Context, req *v1.StaffLogoutReq) (res 
 func (c *ControllerV1) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error) {
 	return service.Staff().Profile(ctx, req)
 }
+
+func (c *ControllerV1) Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (res *v1.StaffPermissionsRes, err error) {
+	return service.Staff().Permissions(ctx, req)
+}
