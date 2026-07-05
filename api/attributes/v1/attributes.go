@@ -63,6 +63,24 @@ type AttributesUpdateReq struct {
 }
 type AttributesUpdateRes struct{}
 
+type AttributesListSearchableReq struct {
+	g.Meta `path:"/attributes/searchable" tags:"Attributes" method:"get" summary:"可搜索属性列表"`
+
+	CategoryId int64 `json:"category_id"`
+}
+type AttributesListSearchableRes struct {
+	List []*entity.Attributes `json:"list"`
+}
+
+type AttributesListSkuSpecReq struct {
+	g.Meta `path:"/attributes/sku-spec" tags:"Attributes" method:"get" summary:"SKU规格属性列表"`
+
+	CategoryId int64 `json:"category_id"`
+}
+type AttributesListSkuSpecRes struct {
+	List []*entity.Attributes `json:"list"`
+}
+
 type AttributesDeleteReq struct {
 	g.Meta `path:"/attributes/{id}" tags:"Attributes" method:"delete" summary:"删除属性"`
 	Id     int64 `json:"id"`

@@ -123,6 +123,38 @@ func (s *sAttributes) Update(ctx context.Context, req *v1.AttributesUpdateReq) (
 	return &v1.AttributesUpdateRes{}, nil
 }
 
+func (s *sAttributes) ListSearchable(ctx context.Context, req *v1.AttributesListSearchableReq) (res *v1.AttributesListSearchableRes, err error) {
+	m := dao.Attributes.Ctx(ctx).Where(dao.Attributes.Columns().Searchable, 1).Where(dao.Attributes.Columns().Status, 1)
+	if req.CategoryId > 0 {
+		m = m.Where(dao.Attributes.Columns().CategoryId, req.CategoryId)
+	}
+	var list []*entity.Attributes
+	err = m.OrderAsc(dao.Attributes.Columns().SortOrder).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.Attributes, 0)
+	}
+	return &v1.AttributesListSearchableRes{List: list}, nil
+}
+
+func (s *sAttributes) ListSkuSpec(ctx context.Context, req *v1.AttributesListSkuSpecReq) (res *v1.AttributesListSkuSpecRes, err error) {
+	m := dao.Attributes.Ctx(ctx).Where(dao.Attributes.Columns().IsSkuSpec, 1).Where(dao.Attributes.Columns().Status, 1)
+	if req.CategoryId > 0 {
+		m = m.Where(dao.Attributes.Columns().CategoryId, req.CategoryId)
+	}
+	var list []*entity.Attributes
+	err = m.OrderAsc(dao.Attributes.Columns().SortOrder).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.Attributes, 0)
+	}
+	return &v1.AttributesListSkuSpecRes{List: list}, nil
+}
+
 func (s *sAttributes) Delete(ctx context.Context, req *v1.AttributesDeleteReq) (res *v1.AttributesDeleteRes, err error) {
 	_, err = dao.Attributes.Ctx(ctx).Where(dao.Attributes.Columns().Id, req.Id).Delete()
 	if err != nil {
