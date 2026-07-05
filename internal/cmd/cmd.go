@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
@@ -13,11 +14,14 @@ import (
 	"gf-eshop/internal/controller/permissions"
 	"gf-eshop/internal/controller/roles"
 	staffCtrl "gf-eshop/internal/controller/staff"
+	wsCtrl "gf-eshop/internal/controller/ws"
 
 	"gf-eshop/internal/controller/hello"
 	brandsLogic "gf-eshop/internal/logic/brands"
 	categoriesLogic "gf-eshop/internal/logic/categories"
 	"gf-eshop/internal/middleware"
+	"gf-eshop/internal/service"
+	"gf-eshop/internal/ws"
 	"gf-eshop/utility"
 )
 
@@ -30,6 +34,11 @@ var (
 			// 启动时缓存预热
 			brandsLogic.Warmup(ctx)
 			categoriesLogic.Warmup(ctx)
+
+			// 创建并启动 WebSocket Hub
+			wsHub := ws.NewHub()
+			go wsHub.Run()
+			service.RegisterWsHub(wsHub)
 
 			s := g.Server()
 			s.Group("/", func(group *ghttp.RouterGroup) {
@@ -62,6 +71,44 @@ var (
 					group.Bind(
 						roles.NewV1(),
 					)
+				})
+				group.Group("/ws", func(group *ghttp.RouterGroup) {
+					group.Middleware(authMiddleware)
+					group.Bind(
+						wsCtrl.NewV1(),
+					)
+				})
+			})
+			// WS 升级路由（不使用 MiddlewareHandlerResponse，token 从查询参数获取）
+			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
+				group.GET("/ws", func(r *ghttp.Request) {
+					tokenStr := r.GetQuery("token").String()
+					if tokenStr == "" {
+						r.Response.WriteStatus(401)
+						return
+					}
+					claims, err := utility.ParseStaffToken(r.Context(), tokenStr)
+					if err != nil {
+						r.Response.WriteStatus(401)
+						return
+					}
+					if claims.TokenType != utility.TokenTypeAccess {
+						r.Response.WriteStatus(401)
+						return
+					}
+					wsConn, err := r.WebSocket()
+					if err != nil {
+						return
+					}
+					lastSeqStr := r.GetQuery("last_seq").String()
+					var lastSeq int64
+					if lastSeqStr != "" {
+						lastSeq, _ = strconv.ParseInt(lastSeqStr, 10, 64)
+					}
+					client := ws.NewClient(wsHub, wsConn, claims.StaffId, lastSeq)
+					wsHub.Register() <- client
+					go client.WritePump()
+					client.ReadPump()
 				})
 			})
 			s.Run()
