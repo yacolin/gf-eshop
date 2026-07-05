@@ -36,7 +36,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v
 	}
 
 	// 无筛选条件时走 Lua 脚本
-	if req.ParentId <= 0 && req.Status <= 0 {
+	if req.ParentId <= 0 && req.Status <= 0 && req.Name == "" && req.Level <= 0 {
 		list, total, err := getCategoryPage(ctx, page, size)
 		if err == nil && total > 0 {
 			return &v1.CategoryListRes{List: list, Total: total}, nil
@@ -69,6 +69,12 @@ func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v
 	}
 	if req.Status > 0 {
 		m = m.Where(dao.Categories.Columns().Status, req.Status)
+	}
+	if req.Name != "" {
+		m = m.Where(dao.Categories.Columns().Name+" LIKE ?", "%"+req.Name+"%")
+	}
+	if req.Level > 0 {
+		m = m.Where(dao.Categories.Columns().Level, req.Level)
 	}
 
 	total, err := m.Count()

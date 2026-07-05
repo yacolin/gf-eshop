@@ -10,10 +10,12 @@ import (
 type CategoryListReq struct {
 	g.Meta `path:"/categories" tags:"Categories" method:"get" summary:"类目列表（平铺）"`
 
-	Page     int `json:"page"`     // 页码，默认1
-	PageSize int `json:"page_size"` // 每页条数，默认20
-	ParentId int `json:"parent_id"` // 按父级ID筛选
-	Status   int `json:"status"`   // 按状态筛选
+	Page     int    `json:"page"`      // 页码，默认1
+	PageSize int    `json:"page_size"` // 每页条数，默认20
+	ParentId int    `json:"parent_id"` // 按父级ID筛选
+	Status   int    `json:"status"`    // 按状态筛选
+	Name     string `json:"name"`      // 按名称模糊搜索
+	Level    int    `json:"level"`     // 按层级筛选
 }
 type CategoryListRes struct {
 	List  []*entity.Categories `json:"list"`
