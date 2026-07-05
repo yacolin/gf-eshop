@@ -96,7 +96,7 @@ func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, c
 
 	// 按 ID 取完整实体
 	var list []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN ?", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
 	if err != nil {
 		return nil, err
 	}
@@ -137,10 +137,13 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 		m = m.WhereGT(dao.Products.Columns().Id, cursorId)
 	}
 
-	var ids []int64
-	err := m.Fields(dao.Products.Columns().Id).OrderAsc(dao.Products.Columns().Id).Limit(size + 1).Scan(&ids)
+	values, err := m.Fields(dao.Products.Columns().Id).OrderAsc(dao.Products.Columns().Id).Limit(size + 1).Array()
 	if err != nil {
 		return nil, err
+	}
+	ids := make([]int64, len(values))
+	for i, v := range values {
+		ids[i] = v.Int64()
 	}
 	if len(ids) == 0 {
 		return &v1.ProductsListRes{List: make([]*entity.Products, 0)}, nil
@@ -152,7 +155,7 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 	}
 
 	var list []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN ?", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
 	if err != nil {
 		return nil, err
 	}
@@ -474,13 +477,13 @@ func buildProductListIDs(ctx context.Context, categoryId, brandId int64, status 
 		m = m.Where(dao.Products.Columns().Status, status)
 	}
 
-	var ids []int64
-	err := m.OrderAsc(dao.Products.Columns().Id).Scan(&ids)
+	values, err := m.OrderAsc(dao.Products.Columns().Id).Array()
 	if err != nil {
 		return nil, err
 	}
-	if ids == nil {
-		ids = make([]int64, 0)
+	ids := make([]int64, len(values))
+	for i, v := range values {
+		ids[i] = v.Int64()
 	}
 	return ids, nil
 }
@@ -658,7 +661,7 @@ func enrichSKUInventory(ctx context.Context, items []*v1.SkuDetailItem) {
 	var rows []invRow
 	err := dao.Inventories.Ctx(ctx).
 		Fields("sku_id", "SUM(quantity) AS quantity", "SUM(reserved) AS reserved").
-		Where("sku_id IN ?", ids).
+		Where("sku_id IN (?)", ids).
 		Where("deleted_at IS NULL").
 		Group("sku_id").
 		Scan(&rows)
