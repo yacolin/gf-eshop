@@ -12,6 +12,11 @@ type IInventoriesV1 interface {
 	Create(ctx context.Context, req *v1.InventoriesCreateReq) (res *v1.InventoriesCreateRes, err error)
 	Update(ctx context.Context, req *v1.InventoriesUpdateReq) (res *v1.InventoriesUpdateRes, err error)
 	Delete(ctx context.Context, req *v1.InventoriesDeleteReq) (res *v1.InventoriesDeleteRes, err error)
+	Lock(ctx context.Context, req *v1.InventoriesLockReq) (res *v1.InventoriesLockRes, err error)
+	Unlock(ctx context.Context, req *v1.InventoriesUnlockReq) (res *v1.InventoriesUnlockRes, err error)
+	Deduct(ctx context.Context, req *v1.InventoriesDeductReq) (res *v1.InventoriesDeductRes, err error)
+	Restock(ctx context.Context, req *v1.InventoriesRestockReq) (res *v1.InventoriesRestockRes, err error)
+	GetStock(ctx context.Context, req *v1.InventoriesGetStockReq) (res *v1.InventoriesGetStockRes, err error)
 }
 
 type Warehouses interface {

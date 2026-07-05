@@ -58,6 +58,67 @@ type InventoriesDeleteReq struct {
 }
 type InventoriesDeleteRes struct{}
 
+// --- Inventories Business ---
+
+type InventoriesLockReq struct {
+	g.Meta `path:"/inventories/lock" tags:"Inventories" method:"post" summary:"下单预占库存"`
+
+	SkuID       int64  `json:"sku_id"       v:"required" description:"SKU ID"`
+	Quantity    int64  `json:"quantity"     v:"required|min:1" description:"预占数量"`
+	ReferenceID string `json:"reference_id"               description:"关联单据ID（如订单号）"`
+	Operator    string `json:"operator"                   description:"操作人"`
+}
+type InventoriesLockRes struct {
+	*entity.Inventories
+}
+
+type InventoriesUnlockReq struct {
+	g.Meta `path:"/inventories/unlock" tags:"Inventories" method:"post" summary:"取消释放预占库存"`
+
+	SkuID       int64  `json:"sku_id"       v:"required" description:"SKU ID"`
+	Quantity    int64  `json:"quantity"     v:"required|min:1" description:"释放数量"`
+	ReferenceID string `json:"reference_id"               description:"关联单据ID（如订单号）"`
+	Operator    string `json:"operator"                   description:"操作人"`
+}
+type InventoriesUnlockRes struct {
+	*entity.Inventories
+}
+
+type InventoriesDeductReq struct {
+	g.Meta `path:"/inventories/deduct" tags:"Inventories" method:"post" summary:"支付扣减库存"`
+
+	SkuID       int64  `json:"sku_id"       v:"required" description:"SKU ID"`
+	Quantity    int64  `json:"quantity"     v:"required|min:1" description:"扣减数量"`
+	ReferenceID string `json:"reference_id"               description:"关联单据ID（如订单号）"`
+	Operator    string `json:"operator"                   description:"操作人"`
+}
+type InventoriesDeductRes struct {
+	*entity.Inventories
+}
+
+type InventoriesRestockReq struct {
+	g.Meta `path:"/inventories/restock" tags:"Inventories" method:"post" summary:"入库/补货"`
+
+	SkuID       int64  `json:"sku_id"       v:"required" description:"SKU ID"`
+	WarehouseID int64  `json:"warehouse_id"               description:"仓库ID"`
+	Quantity    int64  `json:"quantity"     v:"required|min:1" description:"入库数量"`
+	ReferenceID string `json:"reference_id"               description:"关联单据ID（如入库单号）"`
+	Operator    string `json:"operator"                   description:"操作人"`
+	Note        string `json:"note"                       description:"备注"`
+}
+type InventoriesRestockRes struct {
+	*entity.Inventories
+}
+
+type InventoriesGetStockReq struct {
+	g.Meta `path:"/inventories/stock" tags:"Inventories" method:"get" summary:"查询库存(按SKU)"`
+
+	SkuID int64 `json:"sku_id" v:"required" description:"SKU ID"`
+}
+type InventoriesGetStockRes struct {
+	*entity.Inventories
+}
+
 // --- Warehouses ---
 
 type WarehousesListReq struct {
