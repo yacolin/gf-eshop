@@ -21,6 +21,7 @@ type Client struct {
 	Send          chan []byte
 	UserID        int64
 	LastSeq       int64
+	closed        bool
 	pingFailCount int
 	lastPingTime  time.Time
 	pingTicker    *time.Ticker
@@ -130,15 +131,11 @@ func (c *Client) handleClientMessage(message []byte) {
 }
 
 func (c *Client) sendPong(seq int64) {
-	pong := &ClientMessage{
+	data := newEnvelope(&PongPayload{
 		Type:    "pong",
 		Seq:     seq,
 		LastSeq: c.LastSeq,
-	}
-	data, err := json.Marshal(pong)
-	if err != nil {
-		return
-	}
+	})
 	select {
 	case c.Send <- data:
 	default:

@@ -12,6 +12,7 @@ import (
 	"gf-eshop/internal/controller/categories"
 	categoryBrands "gf-eshop/internal/controller/category_brands"
 	"gf-eshop/internal/controller/permissions"
+	"gf-eshop/internal/controller/notification"
 	"gf-eshop/internal/controller/roles"
 	staffCtrl "gf-eshop/internal/controller/staff"
 	wsCtrl "gf-eshop/internal/controller/ws"
@@ -72,13 +73,19 @@ var (
 						roles.NewV1(),
 					)
 				})
-				group.Group("/ws", func(group *ghttp.RouterGroup) {
-					group.Middleware(authMiddleware)
-					group.Bind(
-						wsCtrl.NewV1(),
-					)
-				})
+			group.Group("/notification", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware)
+				group.Bind(
+					notification.NewV1(),
+				)
 			})
+			group.Group("/ws", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware)
+				group.Bind(
+					wsCtrl.NewV1(),
+				)
+			})
+		})
 			// WS 升级路由（不使用 MiddlewareHandlerResponse，token 从查询参数获取）
 			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
 				group.GET("/ws", func(r *ghttp.Request) {

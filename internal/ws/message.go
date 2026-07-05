@@ -2,49 +2,58 @@ package ws
 
 import "encoding/json"
 
-type PushMessage struct {
+const (
+	messageCodeOK = 0
+)
+
+// WsEnvelope is the standard WS message wrapper, aligned with HTTP API response format.
+type WsEnvelope struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+}
+
+func newEnvelope(data interface{}) []byte {
+	payload, _ := json.Marshal(data)
+	b, _ := json.Marshal(&WsEnvelope{Code: messageCodeOK, Message: "", Data: payload})
+	return b
+}
+
+type PushPayload struct {
 	Type       string      `json:"type"`
 	SequenceID int64       `json:"sequence_id"`
 	Timestamp  int64       `json:"timestamp"`
-	Data       interface{} `json:"data"`
+	Payload    interface{} `json:"payload"`
 }
 
-func (m *PushMessage) Marshal() ([]byte, error) {
-	return json.Marshal(m)
+type StatsPayload struct {
+	Type        string `json:"type"`
+	OnlineUsers int    `json:"online_users"`
+	Connections int    `json:"connections"`
 }
 
-func (m *PushMessage) Unmarshal(data []byte) error {
-	return json.Unmarshal(data, m)
+type UserEventPayload struct {
+	Type      string `json:"type"`
+	Action    string `json:"action"`
+	UserID    int64  `json:"user_id"`
+	Timestamp int64  `json:"timestamp"`
 }
 
-type RealtimeMessage struct {
-	Seq     int64       `json:"seq"`
-	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
-}
-
-func (m *RealtimeMessage) Marshal() ([]byte, error) {
-	return json.Marshal(m)
-}
-
-type SystemMessage struct {
+type WelcomePayload struct {
 	Type            string `json:"type"`
 	SequenceID      int64  `json:"sequence_id"`
-	Message         string `json:"message"`
 	RequireFullSync bool   `json:"require_full_sync"`
 }
 
-func (m *SystemMessage) Marshal() ([]byte, error) {
-	return json.Marshal(m)
+type SyncRequiredPayload struct {
+	Type            string `json:"type"`
+	RequireFullSync bool   `json:"require_full_sync"`
 }
 
-func NewSystemMessage(msgType string, message string, requireFullSync bool) *SystemMessage {
-	return &SystemMessage{
-		Type:            msgType,
-		SequenceID:      0,
-		Message:         message,
-		RequireFullSync: requireFullSync,
-	}
+type PongPayload struct {
+	Type    string `json:"type"`
+	Seq     int64  `json:"seq,omitempty"`
+	LastSeq int64  `json:"last_seq,omitempty"`
 }
 
 type ClientMessage struct {

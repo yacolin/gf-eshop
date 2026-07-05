@@ -21,3 +21,10 @@ gfcli:
         jsonOmitEmpty: true
         descriptionTag: true
         noModelComment: true
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "base_notifications,base_notification_templates,base_notification_reads"
+        removePrefix: "base_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true

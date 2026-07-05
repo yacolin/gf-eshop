@@ -2,29 +2,13 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
-
-type UserBrief struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Nickname string `json:"nickname"`
-}
-
-type UserEventPayload struct {
-	Action    string    `json:"action"`
-	User      UserBrief `json:"user"`
-	Timestamp int64     `json:"timestamp"`
-}
-
-type StatsPayload struct {
-	OnlineUsers int `json:"online_users"`
-	Connections int `json:"connections"`
-}
 
 type Hub struct {
 	mu         sync.RWMutex
@@ -66,42 +50,40 @@ func (h *Hub) Run() {
 
 func (h *Hub) handleRegister(client *Client) {
 	h.mu.Lock()
-	wasOffline := h.clients[client.UserID] == nil
-	if h.clients[client.UserID] == nil {
-		h.clients[client.UserID] = make(map[*Client]bool)
+	if h.clients[client.UserID] != nil {
+		for old := range h.clients[client.UserID] {
+			old.closed = true
+			close(old.Send)
+			old.Conn.Close()
+		}
 	}
+	h.clients[client.UserID] = make(map[*Client]bool)
 	h.clients[client.UserID][client] = true
-	count := len(h.clients[client.UserID])
 	h.mu.Unlock()
 
 	go h.sendWelcomeMessage(client)
 	go h.broadcastStats()
-	if wasOffline {
-		go h.broadcastUserEvent(client, "online")
-	}
-	_ = count
+	go h.broadcastUserEvent(client, "online")
 }
 
 func (h *Hub) handleUnregister(client *Client) {
 	h.mu.Lock()
-	isOffline := false
 	if _, ok := h.clients[client.UserID]; ok {
 		if _, exists := h.clients[client.UserID][client]; exists {
 			delete(h.clients[client.UserID], client)
-			close(client.Send)
 			if len(h.clients[client.UserID]) == 0 {
 				delete(h.clients, client.UserID)
-				isOffline = true
+				h.mu.Unlock()
+				go h.broadcastUserEvent(client, "offline")
+				go h.broadcastStats()
+				go h.sessionMgr.UpdateLastSeq(client.UserID, client.LastSeq)
+				return
 			}
+			h.mu.Unlock()
+			return
 		}
 	}
 	h.mu.Unlock()
-
-	if isOffline {
-		go h.broadcastUserEvent(client, "offline")
-	}
-	go h.broadcastStats()
-	go h.sessionMgr.UpdateLastSeq(client.UserID, client.LastSeq)
 }
 
 func (h *Hub) handleShutdown() {
@@ -158,11 +140,15 @@ func (h *Hub) sendToClient(client *Client, data []byte) {
 }
 
 func extractSeqID(data []byte) int64 {
-	var msg PushMessage
-	if err := msg.Unmarshal(data); err == nil {
-		return msg.SequenceID
+	var env WsEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return 0
 	}
-	return 0
+	var p PushPayload
+	if err := json.Unmarshal(env.Data, &p); err != nil {
+		return 0
+	}
+	return p.SequenceID
 }
 
 func (h *Hub) SendToUser(userID int64, data []byte) {
@@ -215,40 +201,22 @@ func (h *Hub) GetOnlineCount() (userCount int, connCount int) {
 }
 
 func (h *Hub) broadcastUserEvent(client *Client, action string) {
-	msg := &RealtimeMessage{
-		Seq:  h.globalSeq.Add(1),
-		Type: "user",
-		Payload: UserEventPayload{
-			Action: action,
-			User: UserBrief{
-				ID:       client.UserID,
-				Username: "",
-				Nickname: "",
-			},
-			Timestamp: time.Now().UnixMilli(),
-		},
-	}
-	data, err := msg.Marshal()
-	if err != nil {
-		return
-	}
+	data := newEnvelope(&UserEventPayload{
+		Type:      "user_" + action,
+		Action:    action,
+		UserID:    client.UserID,
+		Timestamp: time.Now().UnixMilli(),
+	})
 	h.broadcastSafe(data)
 }
 
 func (h *Hub) broadcastStats() {
 	userCount, connCount := h.GetOnlineCount()
-	msg := &RealtimeMessage{
-		Seq:  h.globalSeq.Add(1),
-		Type: "stats",
-		Payload: StatsPayload{
-			OnlineUsers: userCount,
-			Connections: connCount,
-		},
-	}
-	data, err := msg.Marshal()
-	if err != nil {
-		return
-	}
+	data := newEnvelope(&StatsPayload{
+		Type:        "stats",
+		OnlineUsers: userCount,
+		Connections: connCount,
+	})
 	h.broadcastSafe(data)
 }
 
@@ -291,21 +259,18 @@ func (h *Hub) GetUserLastSeq(userID int64) (int64, error) {
 	return session.LastSeq, nil
 }
 
-func (h *Hub) PushToUser(userID int64, eventType string, data interface{}) error {
+func (h *Hub) PushToUser(userID int64, eventType string, payload interface{}) error {
 	seqID, err := h.msgCache.NextSeqID(userID)
 	if err != nil {
 		return err
 	}
-	msg := &PushMessage{
+	msg := &PushPayload{
 		Type:       eventType,
 		SequenceID: seqID,
 		Timestamp:  time.Now().UnixMilli(),
-		Data:       data,
+		Payload:    payload,
 	}
-	msgJSON, err := msg.Marshal()
-	if err != nil {
-		return err
-	}
+	msgJSON := newEnvelope(msg)
 	if err := h.msgCache.StoreMessage(userID, seqID, msgJSON); err != nil {
 		return err
 	}
@@ -320,9 +285,11 @@ func (h *Hub) sendWelcomeMessage(client *Client) {
 		}
 	}()
 	currentSeq, _ := h.msgCache.GetCurrentSeqID(client.UserID)
-	msg := NewSystemMessage("welcome", "连接成功", false)
-	msg.SequenceID = currentSeq
-	data, _ := msg.Marshal()
+	data := newEnvelope(&WelcomePayload{
+		Type:            "welcome",
+		SequenceID:      currentSeq,
+		RequireFullSync: false,
+	})
 	select {
 	case client.Send <- data:
 	default:
@@ -330,8 +297,10 @@ func (h *Hub) sendWelcomeMessage(client *Client) {
 }
 
 func (h *Hub) sendFullSyncRequired(userID int64) {
-	msg := NewSystemMessage("sync_required", "缺失消息超过缓存窗口，请先获取全量数据", true)
-	data, _ := msg.Marshal()
+	data := newEnvelope(&SyncRequiredPayload{
+		Type:            "sync_required",
+		RequireFullSync: true,
+	})
 	h.SendToUser(userID, data)
 }
 

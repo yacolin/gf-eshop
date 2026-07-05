@@ -2,7 +2,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -72,29 +71,30 @@ func (mc *MessageCache) GetMessages(userID int64, lastSeq int64, currentSeq int6
 
 func (mc *MessageCache) GetCachedSeqRange(userID int64) (minSeq, maxSeq int64, err error) {
 	key := msgCacheKeyPrefix + itoa(userID)
-	minV, err := g.Redis().Do(context.Background(), "ZRANGE", key, 0, 0)
+	minV, err := g.Redis().Do(context.Background(), "ZRANGE", key, 0, 0, "WITHSCORES")
 	if err != nil {
 		return 0, 0, err
 	}
-	maxV, err := g.Redis().Do(context.Background(), "ZRANGE", key, -1, -1)
+	if minV.IsNil() {
+		return 0, 0, nil
+	}
+	vals := minV.Vars()
+	if len(vals) < 2 {
+		return 0, 0, nil
+	}
+	minSeq = vals[1].Int64()
+
+	maxV, err := g.Redis().Do(context.Background(), "ZRANGE", key, -1, -1, "WITHSCORES")
 	if err != nil {
 		return 0, 0, err
 	}
-	if minV.IsNil() || maxV.IsNil() {
+	if maxV.IsNil() {
 		return 0, 0, nil
 	}
-	minStrs := minV.Strings()
-	maxStrs := maxV.Strings()
-	if len(minStrs) == 0 || len(maxStrs) == 0 {
+	vals = maxV.Vars()
+	if len(vals) < 2 {
 		return 0, 0, nil
 	}
-	var minMsg PushMessage
-	if err := json.Unmarshal([]byte(minStrs[0]), &minMsg); err != nil {
-		return 0, 0, err
-	}
-	var maxMsg PushMessage
-	if err := json.Unmarshal([]byte(maxStrs[0]), &maxMsg); err != nil {
-		return 0, 0, err
-	}
-	return minMsg.SequenceID, maxMsg.SequenceID, nil
+	maxSeq = vals[1].Int64()
+	return minSeq, maxSeq, nil
 }
