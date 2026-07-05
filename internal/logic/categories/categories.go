@@ -146,6 +146,24 @@ func (s *sCategories) All(ctx context.Context, req *v1.CategoryAllReq) (res *v1.
 	return &v1.CategoryAllRes{List: list}, nil
 }
 
+// NonRoot 非根类目列表（parent_id != 0，用于品牌绑定联动）
+func (s *sCategories) NonRoot(ctx context.Context, req *v1.CategoryNonRootReq) (res *v1.CategoryNonRootRes, err error) {
+	var list []*entity.Categories
+	err = dao.Categories.Ctx(ctx).
+		Where(dao.Categories.Columns().ParentId+" > ?", 0).
+
+		OrderAsc(dao.Categories.Columns().SortOrder).
+		OrderDesc(dao.Categories.Columns().Id).
+		Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.Categories, 0)
+	}
+	return &v1.CategoryNonRootRes{List: list}, nil
+}
+
 // Root 根类目列表
 func (s *sCategories) Root(ctx context.Context, req *v1.CategoryRootReq) (res *v1.CategoryRootRes, err error) {
 	var (

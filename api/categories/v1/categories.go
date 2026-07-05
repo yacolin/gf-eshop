@@ -28,6 +28,14 @@ type CategoryAllRes struct {
 	List []*entity.Categories `json:"list"`
 }
 
+// ---------- NonRoot ----------
+type CategoryNonRootReq struct {
+	g.Meta `path:"/categories/nonroot" tags:"Categories" method:"get" summary:"非根类目"`
+}
+type CategoryNonRootRes struct {
+	List []*entity.Categories `json:"list"`
+}
+
 // ---------- Root ----------
 type CategoryRootReq struct {
 	g.Meta `path:"/categories/root" tags:"Categories" method:"get" summary:"根类目"`

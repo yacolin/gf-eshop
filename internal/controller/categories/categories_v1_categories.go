@@ -15,6 +15,10 @@ func (c *ControllerV1) All(ctx context.Context, req *v1.CategoryAllReq) (res *v1
 	return service.Categories().All(ctx, req)
 }
 
+func (c *ControllerV1) NonRoot(ctx context.Context, req *v1.CategoryNonRootReq) (res *v1.CategoryNonRootRes, err error) {
+	return service.Categories().NonRoot(ctx, req)
+}
+
 func (c *ControllerV1) Root(ctx context.Context, req *v1.CategoryRootReq) (res *v1.CategoryRootRes, err error) {
 	return service.Categories().Root(ctx, req)
 }
