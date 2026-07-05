@@ -90,55 +90,65 @@ func (s *sDashboard) refreshCache(ctx context.Context) error {
 	return err
 }
 
+// rebuildStats 并行执行 7 个统计查询，出错时日志记录不阻断
 func (s *sDashboard) rebuildStats(ctx context.Context) (*v1.DashboardStatsRes, error) {
-	g, egCtx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	var summary v1.SummaryDTO
-	g.Go(func() error {
-		summary = s.computeSummary(egCtx)
-		return nil
+	eg.Go(func() error {
+		var err error
+		summary, err = s.computeSummary(egCtx)
+		if err != nil {
+			g.Log().Warningf(egCtx, "dashboard computeSummary failed: %v", err)
+		}
+		return nil // 不阻断，超时兜底
 	})
 
 	var orderTrend []v1.OrderTrendDTO
-	g.Go(func() error {
+	eg.Go(func() error {
 		orderTrend = s.computeOrderTrend(egCtx)
 		return nil
 	})
 
 	var orderStatusDist []v1.StatusDistDTO
-	g.Go(func() error {
+	eg.Go(func() error {
 		orderStatusDist = s.computeOrderStatusDist(egCtx)
 		return nil
 	})
 
 	var paymentMethodDist []v1.MethodDistDTO
-	g.Go(func() error {
+	eg.Go(func() error {
 		paymentMethodDist = s.computePaymentMethodDist(egCtx)
 		return nil
 	})
 
 	var categoryDist []v1.CategoryDistDTO
-	g.Go(func() error {
-		categoryDist = s.computeCategoryDist(egCtx)
+	eg.Go(func() error {
+		var err error
+		categoryDist, err = s.computeCategoryDist(egCtx)
+		if err != nil {
+			g.Log().Warningf(egCtx, "dashboard computeCategoryDist failed: %v", err)
+		}
 		return nil
 	})
 
 	var inventoryStatusDist []v1.StatusDistDTO
-	g.Go(func() error {
-		inventoryStatusDist = s.computeInventoryStatusDist(egCtx)
+	eg.Go(func() error {
+		var err error
+		inventoryStatusDist, err = s.computeInventoryStatusDist(egCtx)
+		if err != nil {
+			g.Log().Warningf(egCtx, "dashboard computeInventoryStatusDist failed: %v", err)
+		}
 		return nil
 	})
 
 	var topProducts []v1.TopProductDTO
-	g.Go(func() error {
+	eg.Go(func() error {
 		topProducts = s.computeTopProducts(egCtx)
 		return nil
 	})
 
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
+	_ = eg.Wait() // 所有 goroutine 都返回 nil，不阻断
 	return &v1.DashboardStatsRes{
 		Summary:             summary,
 		OrderTrend:          orderTrend,
@@ -152,24 +162,29 @@ func (s *sDashboard) rebuildStats(ctx context.Context) (*v1.DashboardStatsRes, e
 
 // ── Compute Functions ──────────────────────────────────────────────────
 
-func (s *sDashboard) computeSummary(ctx context.Context) v1.SummaryDTO {
+func (s *sDashboard) computeSummary(ctx context.Context) (v1.SummaryDTO, error) {
 	var summary v1.SummaryDTO
 
 	// 商品总数
-	n, _ := dao.Products.Ctx(ctx).Count()
+	n, err := dao.Products.Ctx(ctx).Count()
+	if err != nil {
+		return summary, fmt.Errorf("count products: %w", err)
+	}
 	summary.TotalProducts = int64(n)
 
 	// 库存预警数量（status=2 缺货, status=3 无货）
-	var lowStock int
-	dao.Inventories.Ctx(ctx).WhereIn(dao.Inventories.Columns().Status, g.Slice{2, 3}).Count(&lowStock)
-	summary.LowStockCount = int64(lowStock)
+	n, err = dao.Inventories.Ctx(ctx).
+		WhereIn(dao.Inventories.Columns().Status, g.Slice{2, 3}).
+		Count()
+	if err != nil {
+		return summary, fmt.Errorf("count low stock: %w", err)
+	}
+	summary.LowStockCount = int64(n)
 
-	// 订单/支付表不存在时返回 0
-	return summary
+	return summary, nil
 }
 
 func (s *sDashboard) computeOrderTrend(ctx context.Context) []v1.OrderTrendDTO {
-	// 订单表不存在，返回空
 	return make([]v1.OrderTrendDTO, 0)
 }
 
@@ -181,13 +196,13 @@ func (s *sDashboard) computePaymentMethodDist(ctx context.Context) []v1.MethodDi
 	return make([]v1.MethodDistDTO, 0)
 }
 
-func (s *sDashboard) computeCategoryDist(ctx context.Context) []v1.CategoryDistDTO {
+func (s *sDashboard) computeCategoryDist(ctx context.Context) ([]v1.CategoryDistDTO, error) {
 	type row struct {
 		Category string `orm:"category"`
 		Value    int64  `orm:"value"`
 	}
 	var rows []row
-	err := g.DB().Model("sp_products p").
+	err := g.DB().Model("sp_products", "p").
 		Fields("COALESCE(c.name, '未分类') AS category", "COUNT(p.id) AS value").
 		LeftJoin("sp_categories c", "c.id = p.category_id").
 		Where("p.deleted_at IS NULL").
@@ -196,17 +211,16 @@ func (s *sDashboard) computeCategoryDist(ctx context.Context) []v1.CategoryDistD
 		Limit(8).
 		Scan(&rows)
 	if err != nil {
-		return make([]v1.CategoryDistDTO, 0)
+		return nil, fmt.Errorf("query category dist: %w", err)
 	}
 	result := make([]v1.CategoryDistDTO, len(rows))
 	for i, r := range rows {
 		result[i] = v1.CategoryDistDTO{Category: r.Category, Value: r.Value}
 	}
-	return result
+	return result, nil
 }
 
-func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) []v1.StatusDistDTO {
-	// 查询 sp_inventories 按 status 分组
+func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) ([]v1.StatusDistDTO, error) {
 	type row struct {
 		Status int   `orm:"status"`
 		Value  int64 `orm:"value"`
@@ -218,7 +232,7 @@ func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) []v1.Status
 		Group("status").
 		Scan(&rows)
 	if err != nil {
-		return make([]v1.StatusDistDTO, 0)
+		return nil, fmt.Errorf("query inventory status dist: %w", err)
 	}
 	labelMap := map[int]string{1: "库存充足", 2: "库存偏低", 3: "缺货"}
 	result := make([]v1.StatusDistDTO, 0, len(rows))
@@ -233,10 +247,9 @@ func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) []v1.Status
 			Value:  r.Value,
 		})
 	}
-	return result
+	return result, nil
 }
 
 func (s *sDashboard) computeTopProducts(ctx context.Context) []v1.TopProductDTO {
-	// 无订单明细表，返回空
 	return make([]v1.TopProductDTO, 0)
 }
