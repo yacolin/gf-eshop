@@ -17,9 +17,18 @@ import (
 	staffCtrl "gf-eshop/internal/controller/staff"
 	wsCtrl "gf-eshop/internal/controller/ws"
 
+	"gf-eshop/internal/controller/attributes"
 	"gf-eshop/internal/controller/hello"
+	inventoriesCtrl "gf-eshop/internal/controller/inventories"
+	productVersionsCtrl "gf-eshop/internal/controller/product_versions"
+	inventoryLogsCtrl "gf-eshop/internal/controller/inventory_logs"
+	productAttributesCtrl "gf-eshop/internal/controller/product_attributes"
+	productDescriptionsCtrl "gf-eshop/internal/controller/product_descriptions"
+	productsCtrl "gf-eshop/internal/controller/products"
+	skusCtrl "gf-eshop/internal/controller/skus"
 	brandsLogic "gf-eshop/internal/logic/brands"
 	categoriesLogic "gf-eshop/internal/logic/categories"
+	productsLogic "gf-eshop/internal/logic/products"
 	"gf-eshop/internal/middleware"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
@@ -35,6 +44,7 @@ var (
 			// 启动时缓存预热
 			brandsLogic.Warmup(ctx)
 			categoriesLogic.Warmup(ctx)
+			productsLogic.Warmup(ctx)
 
 			// 创建并启动 WebSocket Hub
 			wsHub := ws.NewHub()
@@ -54,6 +64,15 @@ var (
 					brands.NewV1(),
 					categories.NewV1(),
 					categoryBrands.NewV1(),
+					productsCtrl.NewV1(),
+					skusCtrl.NewV1(),
+					attributes.NewV1(),
+					productAttributesCtrl.NewV1(),
+					productDescriptionsCtrl.NewV1(),
+					inventoriesCtrl.NewV1(),
+					inventoriesCtrl.NewWarehousesV1(),
+					inventoryLogsCtrl.NewV1(),
+					productVersionsCtrl.NewV1(),
 				)
 				group.Group("/staff", func(group *ghttp.RouterGroup) {
 					group.Middleware(authMiddleware)
