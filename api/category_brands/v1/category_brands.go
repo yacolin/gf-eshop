@@ -8,12 +8,12 @@ import (
 
 
 // ---------- List ----------
-type ListReq struct {
+type CategoryBrandListReq struct {
 	g.Meta `path:"/categories/{id}/brands" tags:"Categories" method:"get" summary:"类目下品牌"`
 	Id     int64 `json:"id"`
 }
 
-type ListRes struct {
+type CategoryBrandListRes struct {
 	List []*CategoryBrandItem `json:"list"`
 }
 
@@ -32,11 +32,11 @@ type CategoryBrandItem struct {
 
 
 // ---------- Update ----------
-type UpdateReq struct {
+type CategoryBrandUpdateReq struct {
 	g.Meta `path:"/categories/{id}/brands" tags:"Categories" method:"put" summary:"类目关联品牌"`
 
 	Id        int64   `json:"id"`
 	BrandIDs  []int64 `json:"brand_ids"  v:"required"`
 	SortOrder int     `json:"sort_order" description:"排序权重"`
 }
-type UpdateRes struct{}
+type CategoryBrandUpdateRes struct{}

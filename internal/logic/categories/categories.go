@@ -23,7 +23,7 @@ func init() {
 }
 
 // List 类目平铺列表（支持分页）
-func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error) {
+func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v1.CategoryListRes, err error) {
 	var (
 		page = req.Page
 		size = req.PageSize
@@ -39,7 +39,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 	if req.ParentId <= 0 && req.Status <= 0 {
 		list, total, err := getCategoryPage(ctx, page, size)
 		if err == nil && total > 0 {
-			return &v1.ListRes{List: list, Total: total}, nil
+			return &v1.CategoryListRes{List: list, Total: total}, nil
 		}
 		if ctx.Err() != nil {
 			return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
@@ -47,14 +47,14 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 		ensureCategoryCache(ctx)
 		list, total, err = getCategoryPage(ctx, page, size)
 		if err == nil && total > 0 {
-			return &v1.ListRes{List: list, Total: total}, nil
+			return &v1.CategoryListRes{List: list, Total: total}, nil
 		}
 		var dbAll []*entity.Categories
 		if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).Scan(&dbAll); err != nil {
 			return nil, err
 		}
 		if len(dbAll) == 0 {
-			return &v1.ListRes{List: make([]*entity.Categories, 0), Total: 0}, nil
+			return &v1.CategoryListRes{List: make([]*entity.Categories, 0), Total: 0}, nil
 		}
 		return paginateCategories(page, size, dbAll), nil
 	}
@@ -76,7 +76,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 		return nil, err
 	}
 	if total == 0 {
-		return &v1.ListRes{
+		return &v1.CategoryListRes{
 			List:  make([]*entity.Categories, 0),
 			Total: 0,
 		}, nil
@@ -86,27 +86,27 @@ func (s *sCategories) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRe
 	if err != nil {
 		return nil, err
 	}
-	return &v1.ListRes{
+	return &v1.CategoryListRes{
 		List:  list,
 		Total: total,
 	}, nil
 }
 
-func paginateCategories(page, size int, all []*entity.Categories) *v1.ListRes {
+func paginateCategories(page, size int, all []*entity.Categories) *v1.CategoryListRes {
 	total := len(all)
 	start := (page - 1) * size
 	if start >= total {
-		return &v1.ListRes{List: make([]*entity.Categories, 0), Total: total}
+		return &v1.CategoryListRes{List: make([]*entity.Categories, 0), Total: total}
 	}
 	end := start + size
 	if end > total {
 		end = total
 	}
-	return &v1.ListRes{List: all[start:end], Total: total}
+	return &v1.CategoryListRes{List: all[start:end], Total: total}
 }
 
 // All 所有类目列表（Lua 全量读取）
-func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+func (s *sCategories) All(ctx context.Context, req *v1.CategoryAllReq) (res *v1.CategoryAllRes, err error) {
 	// ZRANGE 0 -1 一次性拿全部 ID
 	v, err := g.Redis().Do(ctx, "ZRANGE", categoryIdsKey, 0, -1)
 	if err == nil && !v.IsNil() && len(v.Vars()) > 0 {
@@ -130,7 +130,7 @@ func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, 
 				list = append(list, &c)
 			}
 			if list != nil {
-				return &v1.AllRes{List: list}, nil
+				return &v1.CategoryAllRes{List: list}, nil
 			}
 		}
 	}
@@ -143,11 +143,11 @@ func (s *sCategories) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, 
 	if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).OrderDesc(dao.Categories.Columns().Id).Scan(&list); err != nil {
 		return nil, err
 	}
-	return &v1.AllRes{List: list}, nil
+	return &v1.CategoryAllRes{List: list}, nil
 }
 
 // Root 根类目列表
-func (s *sCategories) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRes, err error) {
+func (s *sCategories) Root(ctx context.Context, req *v1.CategoryRootReq) (res *v1.CategoryRootRes, err error) {
 	var (
 		m    = dao.Categories.Ctx(ctx)
 		list []*entity.Categories
@@ -156,11 +156,11 @@ func (s *sCategories) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRe
 	if err != nil {
 		return nil, err
 	}
-	return &v1.RootRes{List: list}, nil
+	return &v1.CategoryRootRes{List: list}, nil
 }
 
 // Children 子类目列表
-func (s *sCategories) Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error) {
+func (s *sCategories) Children(ctx context.Context, req *v1.CategoryChildrenReq) (res *v1.CategoryChildrenRes, err error) {
 	var (
 		m    = dao.Categories.Ctx(ctx)
 		list []*entity.Categories
@@ -169,11 +169,11 @@ func (s *sCategories) Children(ctx context.Context, req *v1.ChildrenReq) (res *v
 	if err != nil {
 		return nil, err
 	}
-	return &v1.ChildrenRes{List: list}, nil
+	return &v1.CategoryChildrenRes{List: list}, nil
 }
 
 // Level 层级类目列表
-func (s *sCategories) Level(ctx context.Context, req *v1.LevelReq) (res *v1.LevelRes, err error) {
+func (s *sCategories) Level(ctx context.Context, req *v1.CategoryLevelReq) (res *v1.CategoryLevelRes, err error) {
 	var (
 		m    = dao.Categories.Ctx(ctx)
 		list []*entity.Categories
@@ -182,11 +182,11 @@ func (s *sCategories) Level(ctx context.Context, req *v1.LevelReq) (res *v1.Leve
 	if err != nil {
 		return nil, err
 	}
-	return &v1.LevelRes{List: list}, nil
+	return &v1.CategoryLevelRes{List: list}, nil
 }
 
 // Tree 类目树形结构
-func (s *sCategories) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error) {
+func (s *sCategories) Tree(ctx context.Context, req *v1.CategoryTreeReq) (res *v1.CategoryTreeRes, err error) {
 	var (
 		m   = dao.Categories.Ctx(ctx)
 		all []*entity.Categories
@@ -198,15 +198,15 @@ func (s *sCategories) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRe
 	if err != nil {
 		return nil, err
 	}
-	return &v1.TreeRes{Tree: buildTree(all, 0)}, nil
+	return &v1.CategoryTreeRes{Tree: buildTree(all, 0)}, nil
 }
 
 // buildTree 递归构建树形结构
-func buildTree(nodes []*entity.Categories, parentId int64) []*v1.TreeItem {
-	var tree []*v1.TreeItem
+func buildTree(nodes []*entity.Categories, parentId int64) []*v1.CategoryTreeItem {
+	var tree []*v1.CategoryTreeItem
 	for _, n := range nodes {
 		if n.ParentId == parentId {
-			item := &v1.TreeItem{
+			item := &v1.CategoryTreeItem{
 				Categories: n,
 				Children:   buildTree(nodes, n.Id),
 			}
@@ -217,10 +217,10 @@ func buildTree(nodes []*entity.Categories, parentId int64) []*v1.TreeItem {
 }
 
 // Detail 类目详情（缓存旁路）
-func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error) {
+func (s *sCategories) Detail(ctx context.Context, req *v1.CategoryDetailReq) (res *v1.CategoryDetailRes, err error) {
 	cached, err := getCategoryEntityCache(ctx, req.Id)
 	if err == nil && cached != nil {
-		return &v1.DetailRes{Categories: cached}, nil
+		return &v1.CategoryDetailRes{Categories: cached}, nil
 	}
 	if ctx.Err() != nil {
 		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
@@ -237,11 +237,11 @@ func (s *sCategories) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.De
 	if err := setCategoryEntityCache(context.Background(), entity); err != nil {
 		g.Log().Warning(ctx, "setCategoryEntityCache failed: %v", err)
 	}
-	return &v1.DetailRes{Categories: entity}, nil
+	return &v1.CategoryDetailRes{Categories: entity}, nil
 }
 
 // Create 新增类目
-func (s *sCategories) Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error) {
+func (s *sCategories) Create(ctx context.Context, req *v1.CategoryCreateReq) (res *v1.CategoryCreateRes, err error) {
 	result, err := dao.Categories.Ctx(ctx).Insert(do.Categories{
 		Name:      req.Name,
 		ParentId:  req.ParentId,
@@ -256,11 +256,11 @@ func (s *sCategories) Create(ctx context.Context, req *v1.CreateReq) (res *v1.Cr
 	}
 	id, _ := result.LastInsertId()
 	addCategoryToIndex(context.Background(), id, req.SortOrder)
-	return &v1.CreateRes{Id: id}, nil
+	return &v1.CategoryCreateRes{Id: id}, nil
 }
 
 // Update 更新类目
-func (s *sCategories) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error) {
+func (s *sCategories) Update(ctx context.Context, req *v1.CategoryUpdateReq) (res *v1.CategoryUpdateRes, err error) {
 	count, err := dao.Categories.Ctx(ctx).Where(dao.Categories.Columns().Id, req.Id).Count()
 	if err != nil {
 		return nil, err
@@ -282,16 +282,16 @@ func (s *sCategories) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.Up
 	}
 	g.Redis().Do(context.Background(), "ZADD", categoryIdsKey, encodeCategoryScore(req.SortOrder, req.Id), req.Id)
 	delCategoryEntityCache(context.Background(), req.Id)
-	return &v1.UpdateRes{}, nil
+	return &v1.CategoryUpdateRes{}, nil
 }
 
 // Delete 删除类目（软删除）
-func (s *sCategories) Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.DeleteRes, err error) {
+func (s *sCategories) Delete(ctx context.Context, req *v1.CategoryDeleteReq) (res *v1.CategoryDeleteRes, err error) {
 	_, err = dao.Categories.Ctx(ctx).Where(dao.Categories.Columns().Id, req.Id).Delete()
 	if err != nil {
 		return nil, err
 	}
 	removeCategoryFromIndex(context.Background(), req.Id)
 	delCategoryEntityCache(context.Background(), req.Id)
-	return &v1.DeleteRes{}, nil
+	return &v1.CategoryDeleteRes{}, nil
 }

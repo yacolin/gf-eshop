@@ -20,7 +20,7 @@ func init() {
 }
 
 // List 获取类目下的品牌关联列表（含品牌详情）
-func (s *sCategoryBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error) {
+func (s *sCategoryBrands) List(ctx context.Context, req *v1.CategoryBrandListReq) (res *v1.CategoryBrandListRes, err error) {
 	var (
 		m    = dao.CategoryBrands.Ctx(ctx)
 		list []*v1.CategoryBrandItem
@@ -46,11 +46,11 @@ func (s *sCategoryBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.Li
 	if list == nil {
 		list = make([]*v1.CategoryBrandItem, 0)
 	}
-	return &v1.ListRes{List: list}, nil
+	return &v1.CategoryBrandListRes{List: list}, nil
 }
 
 // Update 批量替换类目下的品牌关联（先删后插）
-func (s *sCategoryBrands) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error) {
+func (s *sCategoryBrands) Update(ctx context.Context, req *v1.CategoryBrandUpdateReq) (res *v1.CategoryBrandUpdateRes, err error) {
 	// 前置校验：类目是否存在
 	categoryCount, err := dao.Categories.Ctx(ctx).Where(dao.Categories.Columns().Id, req.Id).Count()
 	if err != nil {
@@ -92,5 +92,5 @@ func (s *sCategoryBrands) Update(ctx context.Context, req *v1.UpdateReq) (res *v
 	if err != nil {
 		return nil, err
 	}
-	return &v1.UpdateRes{}, nil
+	return &v1.CategoryBrandUpdateRes{}, nil
 }

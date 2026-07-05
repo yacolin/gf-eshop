@@ -4,12 +4,12 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-type LoginReq struct {
+type StaffLoginReq struct {
 	g.Meta   `path:"/login" tags:"Staff" method:"post" summary:"系统用户登录"`
 	Username string `json:"username" v:"required" description:"用户名"`
 	Password string `json:"password" v:"required" description:"密码"`
 }
-type LoginRes struct {
+type StaffLoginRes struct {
 	AccessToken  string `json:"access_token"  description:"访问令牌"`
 	ExpireIn     int64  `json:"expire_in"     description:"access_token 过期时间（秒）"`
 	RefreshToken string `json:"refresh_token" description:"刷新令牌"`
@@ -19,26 +19,26 @@ type LoginRes struct {
 	RealName     string `json:"real_name"     description:"真实姓名"`
 }
 
-type RefreshTokenReq struct {
+type StaffRefreshTokenReq struct {
 	g.Meta       `path:"/refresh" tags:"Staff" method:"post" summary:"刷新令牌"`
 	RefreshToken string `json:"refresh_token" v:"required" description:"刷新令牌"`
 }
-type RefreshTokenRes struct {
+type StaffRefreshTokenRes struct {
 	AccessToken  string `json:"access_token"  description:"新的访问令牌"`
 	ExpireIn     int64  `json:"expire_in"     description:"access_token 过期时间（秒）"`
 	RefreshToken string `json:"refresh_token" description:"新的刷新令牌"`
 	RefreshIn    int64  `json:"refresh_in"    description:"refresh_token 过期时间（秒）"`
 }
 
-type LogoutReq struct {
+type StaffLogoutReq struct {
 	g.Meta `path:"/logout" tags:"Staff" method:"post" summary:"系统用户退出登录"`
 }
-type LogoutRes struct{}
+type StaffLogoutRes struct{}
 
-type ProfileReq struct {
+type StaffProfileReq struct {
 	g.Meta `path:"/profile" tags:"Staff" method:"get" summary:"获取当前用户信息"`
 }
-type ProfileRes struct {
+type StaffProfileRes struct {
 	Id          int64  `json:"id"          description:"用户ID"`
 	Username    string `json:"username"    description:"用户名"`
 	RealName    string `json:"real_name"   description:"真实姓名"`

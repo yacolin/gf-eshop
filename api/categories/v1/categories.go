@@ -7,7 +7,7 @@ import (
 )
 
 // ---------- List ----------
-type ListReq struct {
+type CategoryListReq struct {
 	g.Meta `path:"/categories" tags:"Categories" method:"get" summary:"类目列表（平铺）"`
 
 	Page     int `json:"page"`     // 页码，默认1
@@ -15,74 +15,74 @@ type ListReq struct {
 	ParentId int `json:"parent_id"` // 按父级ID筛选
 	Status   int `json:"status"`   // 按状态筛选
 }
-type ListRes struct {
+type CategoryListRes struct {
 	List  []*entity.Categories `json:"list"`
 	Total int                  `json:"total"`
 }
 
 // ---------- All ----------
-type AllReq struct {
+type CategoryAllReq struct {
 	g.Meta `path:"/categories/all" tags:"Categories" method:"get" summary:"所有类目"`
 }
-type AllRes struct {
+type CategoryAllRes struct {
 	List []*entity.Categories `json:"list"`
 }
 
 // ---------- Root ----------
-type RootReq struct {
+type CategoryRootReq struct {
 	g.Meta `path:"/categories/root" tags:"Categories" method:"get" summary:"根类目"`
 }
-type RootRes struct {
+type CategoryRootRes struct {
 	List []*entity.Categories `json:"list"`
 }
 
 
 // ---------- Children ----------
-type ChildrenReq struct {
+type CategoryChildrenReq struct {
 	g.Meta `path:"/categories/{id}/children" tags:"Categories" method:"get" summary:"子类目"`
 	Id     int64 `json:"id"`
 }
 
-type ChildrenRes struct {
+type CategoryChildrenRes struct {
 	List []*entity.Categories `json:"list"`
 }
 
 
 // ---------- Level ----------
-type LevelReq struct {
+type CategoryLevelReq struct {
 	g.Meta `path:"/categories/level/{level}" tags:"Categories" method:"get" summary:"层级类目"`
 	Level     int64 `json:"level"`
 }
 
-type LevelRes struct {
+type CategoryLevelRes struct {
 	List []*entity.Categories `json:"list"`
 }
 
 
 // ---------- Tree ----------
-type TreeReq struct {
+type CategoryTreeReq struct {
 	g.Meta `path:"/categories/tree" tags:"Categories" method:"get" summary:"类目树形结构"`
 	Status int `json:"status"`
 }
-type TreeItem struct {
+type CategoryTreeItem struct {
 	*entity.Categories
-	Children []*TreeItem `json:"children"`
+	Children []*CategoryTreeItem `json:"children"`
 }
-type TreeRes struct {
-	Tree []*TreeItem `json:"tree"`
+type CategoryTreeRes struct {
+	Tree []*CategoryTreeItem `json:"tree"`
 }
 
 // ---------- Detail ----------
-type DetailReq struct {
+type CategoryDetailReq struct {
 	g.Meta `path:"/categories/{id}" tags:"Categories" method:"get" summary:"类目详情"`
 	Id     int64 `json:"id"`
 }
-type DetailRes struct {
+type CategoryDetailRes struct {
 	*entity.Categories
 }
 
 // ---------- Create ----------
-type CreateReq struct {
+type CategoryCreateReq struct {
 	g.Meta `path:"/categories" tags:"Categories" method:"post" summary:"新增类目"`
 
 	Name      string `json:"name"      v:"required|length:1,100" description:"类目名称"`
@@ -93,12 +93,12 @@ type CreateReq struct {
 	SortOrder int    `json:"sort_order" description:"排序"`
 	Status    int    `json:"status"    description:"状态"`
 }
-type CreateRes struct {
+type CategoryCreateRes struct {
 	Id int64 `json:"id"`
 }
 
 // ---------- Update ----------
-type UpdateReq struct {
+type CategoryUpdateReq struct {
 	g.Meta `path:"/categories/{id}" tags:"Categories" method:"put" summary:"更新类目"`
 
 	Id        int64  `json:"id"        v:"required"`
@@ -110,11 +110,11 @@ type UpdateReq struct {
 	SortOrder int    `json:"sort_order" description:"排序"`
 	Status    int    `json:"status"    description:"状态"`
 }
-type UpdateRes struct{}
+type CategoryUpdateRes struct{}
 
 // ---------- Delete ----------
-type DeleteReq struct {
+type CategoryDeleteReq struct {
 	g.Meta `path:"/categories/{id}" tags:"Categories" method:"delete" summary:"删除类目"`
 	Id     int64 `json:"id"`
 }
-type DeleteRes struct{}
+type CategoryDeleteRes struct{}

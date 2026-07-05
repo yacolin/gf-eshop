@@ -7,11 +7,11 @@ import (
 )
 
 type IBrands interface {
-	List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error)
-	Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error)
-	Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error)
-	Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error)
-	Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.DeleteRes, err error)
+	List(ctx context.Context, req *v1.BrandsListReq) (res *v1.BrandsListRes, err error)
+	Detail(ctx context.Context, req *v1.BrandsDetailReq) (res *v1.BrandsDetailRes, err error)
+	Create(ctx context.Context, req *v1.BrandsCreateReq) (res *v1.BrandsCreateRes, err error)
+	Update(ctx context.Context, req *v1.BrandsUpdateReq) (res *v1.BrandsUpdateRes, err error)
+	Delete(ctx context.Context, req *v1.BrandsDeleteReq) (res *v1.BrandsDeleteRes, err error)
 }
 
 var localBrands IBrands

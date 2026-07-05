@@ -48,7 +48,7 @@ func deleteAllRefreshTokens(ctx context.Context, staffId int64) {
 	}
 }
 
-func (s *sStaff) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error) {
+func (s *sStaff) Login(ctx context.Context, req *v1.StaffLoginReq) (res *v1.StaffLoginRes, err error) {
 	var staff *entity.Staff
 	err = dao.Staff.Ctx(ctx).
 		Where(dao.Staff.Columns().Username, req.Username).
@@ -85,7 +85,7 @@ func (s *sStaff) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes,
 		saveRefreshToken(ctx, staff.Id, refreshClaims.TokenId, utility.JwtRefreshExpire(ctx))
 	}
 
-	return &v1.LoginRes{
+	return &v1.StaffLoginRes{
 		AccessToken:  pair.AccessToken,
 		ExpireIn:     pair.ExpireIn,
 		RefreshToken: pair.RefreshToken,
@@ -96,7 +96,7 @@ func (s *sStaff) Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes,
 	}, nil
 }
 
-func (s *sStaff) RefreshToken(ctx context.Context, req *v1.RefreshTokenReq) (res *v1.RefreshTokenRes, err error) {
+func (s *sStaff) RefreshToken(ctx context.Context, req *v1.StaffRefreshTokenReq) (res *v1.StaffRefreshTokenRes, err error) {
 	claims, err := utility.ParseStaffToken(ctx, req.RefreshToken)
 	if err != nil {
 		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "RefreshToken无效或已过期")
@@ -134,7 +134,7 @@ func (s *sStaff) RefreshToken(ctx context.Context, req *v1.RefreshTokenReq) (res
 		saveRefreshToken(ctx, staff.Id, refreshClaims.TokenId, utility.JwtRefreshExpire(ctx))
 	}
 
-	return &v1.RefreshTokenRes{
+	return &v1.StaffRefreshTokenRes{
 		AccessToken:  pair.AccessToken,
 		ExpireIn:     pair.ExpireIn,
 		RefreshToken: pair.RefreshToken,
@@ -142,15 +142,15 @@ func (s *sStaff) RefreshToken(ctx context.Context, req *v1.RefreshTokenReq) (res
 	}, nil
 }
 
-func (s *sStaff) Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRes, err error) {
+func (s *sStaff) Logout(ctx context.Context, req *v1.StaffLogoutReq) (res *v1.StaffLogoutRes, err error) {
 	claims := utility.GetStaffClaims(ctx)
 	if claims != nil {
 		deleteAllRefreshTokens(ctx, claims.StaffId)
 	}
-	return &v1.LogoutRes{}, nil
+	return &v1.StaffLogoutRes{}, nil
 }
 
-func (s *sStaff) Profile(ctx context.Context, req *v1.ProfileReq) (res *v1.ProfileRes, err error) {
+func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error) {
 	claims := utility.GetStaffClaims(ctx)
 	if claims == nil {
 		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
@@ -167,7 +167,7 @@ func (s *sStaff) Profile(ctx context.Context, req *v1.ProfileReq) (res *v1.Profi
 		return nil, gerror.NewCode(gcode.CodeNotFound, "用户不存在")
 	}
 
-	return &v1.ProfileRes{
+	return &v1.StaffProfileRes{
 		Id:          staff.Id,
 		Username:    staff.Username,
 		RealName:    staff.RealName,

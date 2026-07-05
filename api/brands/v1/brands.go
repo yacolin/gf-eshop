@@ -7,7 +7,7 @@ import (
 )
 
 // ---------- List ----------
-type ListReq struct {
+type BrandsListReq struct {
 	g.Meta `path:"/brands" tags:"Brands" method:"get" summary:"品牌列表"`
 
 	Page       int    `json:"page"`        // 页码，默认1
@@ -16,22 +16,22 @@ type ListReq struct {
 	FirstLetter string `json:"first_letter"` // 按首字母筛选
 	Status     int    `json:"status"`      // 按状态筛选
 }
-type ListRes struct {
+type BrandsListRes struct {
 	List  []*entity.Brands `json:"list"`
 	Total int              `json:"total"`
 }
 
 // ---------- Detail ----------
-type DetailReq struct {
+type BrandsDetailReq struct {
 	g.Meta `path:"/brands/{id}" tags:"Brands" method:"get" summary:"品牌详情"`
 	Id     int64 `json:"id"`
 }
-type DetailRes struct {
+type BrandsDetailRes struct {
 	*entity.Brands
 }
 
 // ---------- Create ----------
-type CreateReq struct {
+type BrandsCreateReq struct {
 	g.Meta `path:"/brands" tags:"Brands" method:"post" summary:"新增品牌"`
 
 	Name        string `json:"name"        v:"required|length:1,100" description:"品牌名称"`
@@ -42,12 +42,12 @@ type CreateReq struct {
 	Status      int    `json:"status"      description:"状态"`
 	Description string `json:"description" description:"品牌故事"`
 }
-type CreateRes struct {
+type BrandsCreateRes struct {
 	Id int64 `json:"id"`
 }
 
 // ---------- Update ----------
-type UpdateReq struct {
+type BrandsUpdateReq struct {
 	g.Meta `path:"/brands/{id}" tags:"Brands" method:"put" summary:"更新品牌"`
 
 	Id          int64  `json:"id"          v:"required"`
@@ -59,11 +59,11 @@ type UpdateReq struct {
 	Status      int    `json:"status"      description:"状态"`
 	Description string `json:"description" description:"品牌故事"`
 }
-type UpdateRes struct{}
+type BrandsUpdateRes struct{}
 
 // ---------- Delete ----------
-type DeleteReq struct {
+type BrandsDeleteReq struct {
 	g.Meta `path:"/brands/{id}" tags:"Brands" method:"delete" summary:"删除品牌"`
 	Id     int64 `json:"id"`
 }
-type DeleteRes struct{}
+type BrandsDeleteRes struct{}

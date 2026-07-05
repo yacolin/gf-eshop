@@ -6,10 +6,10 @@ import (
 )
 
 type IStaff interface {
-	Login(ctx context.Context, req *v1.LoginReq) (res *v1.LoginRes, err error)
-	RefreshToken(ctx context.Context, req *v1.RefreshTokenReq) (res *v1.RefreshTokenRes, err error)
-	Logout(ctx context.Context, req *v1.LogoutReq) (res *v1.LogoutRes, err error)
-	Profile(ctx context.Context, req *v1.ProfileReq) (res *v1.ProfileRes, err error)
+	Login(ctx context.Context, req *v1.StaffLoginReq) (res *v1.StaffLoginRes, err error)
+	RefreshToken(ctx context.Context, req *v1.StaffRefreshTokenReq) (res *v1.StaffRefreshTokenRes, err error)
+	Logout(ctx context.Context, req *v1.StaffLogoutReq) (res *v1.StaffLogoutRes, err error)
+	Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error)
 }
 
 var localStaff IStaff

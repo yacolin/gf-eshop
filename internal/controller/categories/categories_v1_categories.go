@@ -7,41 +7,41 @@ import (
 	"gf-eshop/internal/service"
 )
 
-func (c *ControllerV1) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error) {
+func (c *ControllerV1) List(ctx context.Context, req *v1.CategoryListReq) (res *v1.CategoryListRes, err error) {
 	return service.Categories().List(ctx, req)
 }
 
-func (c *ControllerV1) All(ctx context.Context, req *v1.AllReq) (res *v1.AllRes, err error) {
+func (c *ControllerV1) All(ctx context.Context, req *v1.CategoryAllReq) (res *v1.CategoryAllRes, err error) {
 	return service.Categories().All(ctx, req)
 }
 
-func (c *ControllerV1) Root(ctx context.Context, req *v1.RootReq) (res *v1.RootRes, err error) {
+func (c *ControllerV1) Root(ctx context.Context, req *v1.CategoryRootReq) (res *v1.CategoryRootRes, err error) {
 	return service.Categories().Root(ctx, req)
 }
 
-func (c *ControllerV1) Children(ctx context.Context, req *v1.ChildrenReq) (res *v1.ChildrenRes, err error) {
+func (c *ControllerV1) Children(ctx context.Context, req *v1.CategoryChildrenReq) (res *v1.CategoryChildrenRes, err error) {
 	return service.Categories().Children(ctx, req)
 }
 
-func (c *ControllerV1) Level(ctx context.Context, req *v1.LevelReq) (res *v1.LevelRes, err error) {
+func (c *ControllerV1) Level(ctx context.Context, req *v1.CategoryLevelReq) (res *v1.CategoryLevelRes, err error) {
 	return service.Categories().Level(ctx, req)
 }
-func (c *ControllerV1) Tree(ctx context.Context, req *v1.TreeReq) (res *v1.TreeRes, err error) {
+func (c *ControllerV1) Tree(ctx context.Context, req *v1.CategoryTreeReq) (res *v1.CategoryTreeRes, err error) {
 	return service.Categories().Tree(ctx, req)
 }
 
-func (c *ControllerV1) Detail(ctx context.Context, req *v1.DetailReq) (res *v1.DetailRes, err error) {
+func (c *ControllerV1) Detail(ctx context.Context, req *v1.CategoryDetailReq) (res *v1.CategoryDetailRes, err error) {
 	return service.Categories().Detail(ctx, req)
 }
 
-func (c *ControllerV1) Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error) {
+func (c *ControllerV1) Create(ctx context.Context, req *v1.CategoryCreateReq) (res *v1.CategoryCreateRes, err error) {
 	return service.Categories().Create(ctx, req)
 }
 
-func (c *ControllerV1) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error) {
+func (c *ControllerV1) Update(ctx context.Context, req *v1.CategoryUpdateReq) (res *v1.CategoryUpdateRes, err error) {
 	return service.Categories().Update(ctx, req)
 }
 
-func (c *ControllerV1) Delete(ctx context.Context, req *v1.DeleteReq) (res *v1.DeleteRes, err error) {
+func (c *ControllerV1) Delete(ctx context.Context, req *v1.CategoryDeleteReq) (res *v1.CategoryDeleteRes, err error) {
 	return service.Categories().Delete(ctx, req)
 }

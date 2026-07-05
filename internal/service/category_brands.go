@@ -7,8 +7,8 @@ import (
 )
 
 type ICategoryBrands interface {
-	List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, err error)
-	Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error)
+	List(ctx context.Context, req *v1.CategoryBrandListReq) (res *v1.CategoryBrandListRes, err error)
+	Update(ctx context.Context, req *v1.CategoryBrandUpdateReq) (res *v1.CategoryBrandUpdateRes, err error)
 }
 
 var localCategoryBrands ICategoryBrands
