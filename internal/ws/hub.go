@@ -140,15 +140,11 @@ func (h *Hub) sendToClient(client *Client, data []byte) {
 }
 
 func extractSeqID(data []byte) int64 {
-	var env WsEnvelope
-	if err := json.Unmarshal(data, &env); err != nil {
+	var msg RealtimeMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
 		return 0
 	}
-	var p PushPayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		return 0
-	}
-	return p.SequenceID
+	return msg.Seq
 }
 
 func (h *Hub) SendToUser(userID int64, data []byte) {
@@ -201,22 +197,30 @@ func (h *Hub) GetOnlineCount() (userCount int, connCount int) {
 }
 
 func (h *Hub) broadcastUserEvent(client *Client, action string) {
-	data := newEnvelope(&UserEventPayload{
-		Type:      "user_" + action,
-		Action:    action,
-		UserID:    client.UserID,
-		Timestamp: time.Now().UnixMilli(),
-	})
+	msg := &RealtimeMessage{
+		Seq:  h.globalSeq.Add(1),
+		Type: "user",
+		Payload: &UserEventPayload{
+			Action:    action,
+			UserID:    client.UserID,
+			Timestamp: time.Now().UnixMilli(),
+		},
+	}
+	data, _ := json.Marshal(msg)
 	h.broadcastSafe(data)
 }
 
 func (h *Hub) broadcastStats() {
 	userCount, connCount := h.GetOnlineCount()
-	data := newEnvelope(&StatsPayload{
-		Type:        "stats",
-		OnlineUsers: userCount,
-		Connections: connCount,
-	})
+	msg := &RealtimeMessage{
+		Seq:  h.globalSeq.Add(1),
+		Type: "stats",
+		Payload: &StatsPayload{
+			OnlineUsers: userCount,
+			Connections: connCount,
+		},
+	}
+	data, _ := json.Marshal(msg)
 	h.broadcastSafe(data)
 }
 
@@ -264,13 +268,7 @@ func (h *Hub) PushToUser(userID int64, eventType string, payload interface{}) er
 	if err != nil {
 		return err
 	}
-	msg := &PushPayload{
-		Type:       eventType,
-		SequenceID: seqID,
-		Timestamp:  time.Now().UnixMilli(),
-		Payload:    payload,
-	}
-	msgJSON := newEnvelope(msg)
+	msgJSON := newEnvelopeWithSeq(eventType, payload, seqID)
 	if err := h.msgCache.StoreMessage(userID, seqID, msgJSON); err != nil {
 		return err
 	}
@@ -285,11 +283,15 @@ func (h *Hub) sendWelcomeMessage(client *Client) {
 		}
 	}()
 	currentSeq, _ := h.msgCache.GetCurrentSeqID(client.UserID)
-	data := newEnvelope(&WelcomePayload{
-		Type:            "welcome",
-		SequenceID:      currentSeq,
-		RequireFullSync: false,
-	})
+	msg := &RealtimeMessage{
+		Seq:  currentSeq,
+		Type: "welcome",
+		Payload: &WelcomePayload{
+			SequenceID:      currentSeq,
+			RequireFullSync: false,
+		},
+	}
+	data, _ := json.Marshal(msg)
 	select {
 	case client.Send <- data:
 	default:
@@ -297,10 +299,13 @@ func (h *Hub) sendWelcomeMessage(client *Client) {
 }
 
 func (h *Hub) sendFullSyncRequired(userID int64) {
-	data := newEnvelope(&SyncRequiredPayload{
-		Type:            "sync_required",
-		RequireFullSync: true,
-	})
+	msg := &RealtimeMessage{
+		Type: "sync_required",
+		Payload: &SyncRequiredPayload{
+			RequireFullSync: true,
+		},
+	}
+	data, _ := json.Marshal(msg)
 	h.SendToUser(userID, data)
 }
 

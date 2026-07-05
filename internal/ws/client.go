@@ -131,8 +131,7 @@ func (c *Client) handleClientMessage(message []byte) {
 }
 
 func (c *Client) sendPong(seq int64) {
-	data := newEnvelope(&PongPayload{
-		Type:    "pong",
+	data := newEnvelope("pong", &PongPayload{
 		Seq:     seq,
 		LastSeq: c.LastSeq,
 	})
