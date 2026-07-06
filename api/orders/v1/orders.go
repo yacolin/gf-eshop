@@ -6,8 +6,8 @@ import (
 )
 
 type OrdersCreateReq struct {
-	g.Meta `path:"/orders" tags:"Orders" method:"post" summary:"创建订单"`
-	UserId         int64             `json:"user_id"      v:"required" description:"用户ID"`
+	g.Meta `path:"" tags:"Orders" method:"post" summary:"创建订单"`
+	UserId         int64             `json:"user_id"      description:"用户ID（留空则从登录上下文获取）"`
 	Items          []CreateOrderItem `json:"items"        v:"required" description:"商品列表"`
 	CouponID       *int64            `json:"coupon_id"    description:"优惠券ID"`
 	BuyerRemark    string            `json:"buyer_remark" description:"买家备注" v:"max-length:500"`
@@ -31,7 +31,7 @@ type OrdersCreateRes struct {
 }
 
 type OrdersListReq struct {
-	g.Meta        `path:"/orders" tags:"Orders" method:"get" summary:"订单列表"`
+	g.Meta        `path:"" tags:"Orders" method:"get" summary:"订单列表"`
 	Page          int    `json:"page"           description:"页码"`
 	PageSize      int    `json:"page_size"      description:"每页条数"`
 	UserID        int64  `json:"user_id"        description:"用户ID"`
@@ -46,7 +46,7 @@ type OrdersListRes struct {
 }
 
 type OrdersDetailReq struct {
-	g.Meta  `path:"/orders/{order_no}" tags:"Orders" method:"get" summary:"订单详情"`
+	g.Meta  `path:"/{order_no}" tags:"Orders" method:"get" summary:"订单详情"`
 	OrderNo string `json:"order_no"`
 }
 
@@ -57,9 +57,9 @@ type OrdersDetailRes struct {
 }
 
 type OrdersUpdateStatusReq struct {
-	g.Meta  `path:"/orders/{order_no}/status" tags:"Orders" method:"put" summary:"更新订单状态"`
+	g.Meta  `path:"/{order_no}/status" tags:"Orders" method:"put" summary:"更新订单状态"`
 	OrderNo string `json:"order_no"`
-	Status  string `json:"status" v:"required|in:cancelled,shipped,delivered,completed" description:"目标状态"`
+	Status  string `json:"status" v:"required|in:paid,cancelled,shipped,delivered,completed" description:"目标状态"`
 	Note    string `json:"note"   description:"备注" v:"max-length:500"`
 }
 

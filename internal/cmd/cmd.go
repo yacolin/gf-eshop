@@ -34,6 +34,7 @@ import (
 	"gf-eshop/internal/middleware"
 	ordersCtrl "gf-eshop/internal/controller/orders"
 	paymentsCtrl "gf-eshop/internal/controller/payments"
+	cartsCtrl "gf-eshop/internal/controller/carts"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
 	"gf-eshop/utility"
@@ -122,10 +123,24 @@ var (
 					wsCtrl.NewV1(),
 				)
 			})
-			group.Bind(
-				ordersCtrl.NewV1(),
-				paymentsCtrl.NewV1(),
-			)
+			group.Group("/orders", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware)
+				group.Bind(
+					ordersCtrl.NewV1(),
+				)
+			})
+			group.Group("/payments", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware)
+				group.Bind(
+					paymentsCtrl.NewV1(),
+				)
+			})
+			group.Group("/carts", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware)
+				group.Bind(
+					cartsCtrl.NewV1(),
+				)
+			})
 		})
 			// WS 升级路由（不使用 MiddlewareHandlerResponse，token 从查询参数获取）
 			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
@@ -167,11 +182,12 @@ var (
 
 func authMiddleware(r *ghttp.Request) {
 	publicPaths := map[string]bool{
-		"/api/v1/staff/login":   true,
-		"/api/v1/staff/refresh": true,
+		"/api/v1/staff/login":        true,
+		"/api/v1/staff/refresh":      true,
+		"/api/v1/payments/callback": true,
 	}
 
-	if publicPaths[r.URL.Path] && r.Method == "POST" {
+	if publicPaths[r.URL.Path] {
 		r.Middleware.Next()
 		return
 	}

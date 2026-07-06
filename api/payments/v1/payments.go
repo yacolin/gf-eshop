@@ -6,7 +6,7 @@ import (
 )
 
 type PaymentsCreateReq struct {
-	g.Meta        `path:"/" tags:"Payments" method:"post" summary:"创建支付"`
+	g.Meta        `path:"" tags:"Payments" method:"post" summary:"创建支付"`
 	OrderNo       string `json:"order_no"        v:"required" description:"订单号"`
 	Amount        int64  `json:"amount"          v:"required|min:1" description:"支付金额"`
 	PaymentMethod string `json:"payment_method"  v:"required" description:"支付方式"`

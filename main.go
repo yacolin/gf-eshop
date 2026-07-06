@@ -25,6 +25,7 @@ import (
 	_ "gf-eshop/internal/logic/staff"
 	_ "gf-eshop/internal/logic/orders"
 	_ "gf-eshop/internal/logic/payments"
+	_ "gf-eshop/internal/logic/carts"
 )
 
 func main() {

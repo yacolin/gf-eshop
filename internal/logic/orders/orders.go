@@ -15,6 +15,7 @@ import (
 	"gf-eshop/internal/dao"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
+	"gf-eshop/utility"
 )
 
 type sOrders struct{}
@@ -39,12 +40,23 @@ func generateSubOrderNo() string {
 	return fmt.Sprintf("SUB%s%04d", gtime.Now().Format("YmdHis"), grand.Intn(10000))
 }
 
+// resolveUserID 从 ctx 或 req 获取用户ID
+func resolveUserID(ctx context.Context, userID int64) int64 {
+	if userID > 0 {
+		return userID
+	}
+	if claims := utility.GetStaffClaims(ctx); claims != nil {
+		return claims.StaffId
+	}
+	return 0
+}
+
 func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.OrdersCreateRes, err error) {
 	orderNo := generateOrderNo()
+	userID := resolveUserID(ctx, req.UserId)
 
 	var order *entity.Orders
 	err = dao.Orders.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		// 计算总金额并准备订单项数据
 		var totalAmount, payAmount int64
 		type itemData struct {
 			SkuId       int64
@@ -67,14 +79,54 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			if sku.Id == 0 {
 				return gerror.NewCode(gcode.CodeValidationFailed, fmt.Sprintf("SKU不存在: %d", ri.SkuID))
 			}
+
+			// 锁定库存：检查可用库存 >= 需求数量
+			var inv entity.Inventories
+			err = dao.Inventories.Ctx(ctx).
+				Where(dao.Inventories.Columns().SkuId, ri.SkuID).
+				Where(dao.Inventories.Columns().WarehouseId, 0).
+				Scan(&inv)
+			if err != nil {
+				return err
+			}
+			if inv.Id == 0 {
+				return gerror.NewCode(gcode.CodeValidationFailed, fmt.Sprintf("SKU库存不足: %d", ri.SkuID))
+			}
+			availableQty := inv.Quantity - inv.Reserved
+			if availableQty < int64(ri.Quantity) {
+				return gerror.NewCode(gcode.CodeValidationFailed,
+					fmt.Sprintf("SKU库存不足: %d (可用%d, 需要%d)", ri.SkuID, availableQty, ri.Quantity))
+			}
+
+			// 获取商品名称（从 SPU 表）
+			var product entity.Products
+			err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id, sku.ProductId).Scan(&product)
+			if err != nil {
+				return err
+			}
+			productName := sku.Spec
+			if product.Id > 0 && product.Name != "" {
+				productName = product.Name
+			}
+
 			subtotal := sku.Price * int64(ri.Quantity)
 			totalAmount += subtotal
 			payAmount += subtotal
+
+			// 扣减预留库存
+			_, err = tx.Model("sp_inventories").
+				Where("id", inv.Id).
+				Where("quantity - reserved >= ?", ri.Quantity).
+				Increment("reserved", ri.Quantity)
+			if err != nil {
+				return err
+			}
+
 			items = append(items, itemData{
 				SkuId:       sku.Id,
 				ProductId:   sku.ProductId,
 				SkuCode:     sku.SkuCode,
-				ProductName: sku.Spec,
+				ProductName: productName,
 				SkuSpec:     sku.Spec,
 				Image:       sku.Image,
 				Price:       sku.Price,
@@ -86,7 +138,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		// 写入主订单
 		orderId, err := tx.Model("tx_orders").InsertAndGetId(g.Map{
 			"order_no":       orderNo,
-			"user_id":        req.UserId,
+			"user_id":        userID,
 			"total_amount":   totalAmount,
 			"pay_amount":     payAmount,
 			"shipping_fee":   0,
@@ -109,13 +161,13 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			return err
 		}
 
-		// 创建子订单（按商品分组简化处理，默认一个子订单）
+		// 创建子订单
 		subOrderNo := generateSubOrderNo()
 		subOrderId, err := tx.Model("tx_sub_orders").InsertAndGetId(g.Map{
 			"sub_order_no":    subOrderNo,
 			"parent_order_id": orderId,
 			"parent_order_no": orderNo,
-			"user_id":         req.UserId,
+			"user_id":         userID,
 			"merchant_id":     0,
 			"total_amount":    totalAmount,
 			"discount_amount": 0,
@@ -179,15 +231,16 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 }
 
 func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.OrdersListRes, err error) {
-	var (
-		page = req.Page
-		size = req.PageSize
-	)
+	page := req.Page
+	size := req.PageSize
 	if page <= 0 {
 		page = 1
 	}
 	if size <= 0 {
-		size = 20
+		size = 10
+	}
+	if size > 100 {
+		size = 100
 	}
 
 	m := dao.Orders.Ctx(ctx)
@@ -222,7 +275,7 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 	}
 	return &v1.OrdersListRes{
 		List:  list,
-		Total: total,
+		Total: int(total),
 	}, nil
 }
 
@@ -303,6 +356,7 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 			updateData["paid_at"] = gtime.Now()
 		case "cancelled":
 			updateData["closed_at"] = gtime.Now()
+			updateData["payment_status"] = "refunded"
 		case "shipped":
 			updateData["shipped_at"] = gtime.Now()
 		case "delivered":
@@ -310,7 +364,6 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		case "completed":
 			updateData["completed_at"] = gtime.Now()
 		}
-
 		_, err = tx.Model("tx_orders").Where("id", order.Id).Data(updateData).Update()
 		if err != nil {
 			return err
@@ -321,15 +374,16 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 			"status":     req.Status,
 			"updated_at": gtime.Now(),
 		}
-		if req.Status == "paid" {
+		switch req.Status {
+		case "paid":
 			subUpdateData["paid_at"] = gtime.Now()
-		} else if req.Status == "cancelled" {
+		case "cancelled":
 			subUpdateData["closed_at"] = gtime.Now()
-		} else if req.Status == "shipped" {
+		case "shipped":
 			subUpdateData["shipped_at"] = gtime.Now()
-		} else if req.Status == "delivered" {
+		case "delivered":
 			subUpdateData["delivered_at"] = gtime.Now()
-		} else if req.Status == "completed" {
+		case "completed":
 			subUpdateData["completed_at"] = gtime.Now()
 		}
 		_, err = tx.Model("tx_sub_orders").Where("parent_order_id", order.Id).Data(subUpdateData).Update()
