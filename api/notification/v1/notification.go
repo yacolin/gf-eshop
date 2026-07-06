@@ -6,7 +6,7 @@ import (
 )
 
 type NotificationListReq struct {
-	g.Meta   `path:"/" tags:"Notification" method:"get" summary:"通知列表"`
+	g.Meta   `path:"/notification" tags:"Notification" method:"get" summary:"通知列表"`
 	Page     int `json:"page"`
 	PageSize int `json:"page_size"`
 }
@@ -32,31 +32,31 @@ type NotificationListRes struct {
 }
 
 type NotificationUnreadCountReq struct {
-	g.Meta `path:"/unread" tags:"Notification" method:"get" summary:"未读通知数"`
+	g.Meta `path:"/notification/unread" tags:"Notification" method:"get" summary:"未读通知数"`
 }
 type NotificationUnreadCountRes struct {
 	Count int64 `json:"count"`
 }
 
 type NotificationMarkAsReadReq struct {
-	g.Meta `path:"/{id}/read" tags:"Notification" method:"put" summary:"标记已读"`
+	g.Meta `path:"/notification/{id}/read" tags:"Notification" method:"put" summary:"标记已读"`
 	Id     int64 `json:"id"`
 }
 type NotificationMarkAsReadRes struct{}
 
 type NotificationMarkAllAsReadReq struct {
-	g.Meta `path:"/readall" tags:"Notification" method:"put" summary:"全部已读"`
+	g.Meta `path:"/notification/readall" tags:"Notification" method:"put" summary:"全部已读"`
 }
 type NotificationMarkAllAsReadRes struct{}
 
 type NotificationDeleteReq struct {
-	g.Meta `path:"/{id}" tags:"Notification" method:"delete" summary:"删除通知"`
+	g.Meta `path:"/notification/{id}" tags:"Notification" method:"delete" summary:"删除通知"`
 	Id     int64 `json:"id"`
 }
 type NotificationDeleteRes struct{}
 
 type NotificationSendSystemReq struct {
-	g.Meta       `path:"/system" tags:"Notification" method:"post" summary:"发送系统通知（admin）"`
+	g.Meta       `path:"/notification/system" tags:"Notification" method:"post" summary:"发送系统通知（admin）"`
 	UserId       int64  `json:"user_id" v:"required|min:0" description:"0=全体用户"`
 	TemplateCode string `json:"template_code" description:"模板代码（优先级高于 title/content）"`
 	Title        string `json:"title" description:"通知标题"`
@@ -67,7 +67,7 @@ type NotificationSendSystemRes struct {
 }
 
 type NotificationListTemplatesReq struct {
-	g.Meta `path:"/templates" tags:"Notification" method:"get" summary:"通知模板列表"`
+	g.Meta `path:"/notification/templates" tags:"Notification" method:"get" summary:"通知模板列表"`
 }
 type NotificationListTemplatesItem struct {
 	Id              int64  `json:"id"`

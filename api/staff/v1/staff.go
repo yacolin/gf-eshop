@@ -5,7 +5,7 @@ import (
 )
 
 type StaffLoginReq struct {
-	g.Meta   `path:"/login" tags:"Staff" method:"post" summary:"系统用户登录"`
+	g.Meta   `path:"/staff/login" tags:"Staff" method:"post" summary:"系统用户登录"`
 	Username string `json:"username" v:"required" description:"用户名"`
 	Password string `json:"password" v:"required" description:"密码"`
 }
@@ -20,7 +20,7 @@ type StaffLoginRes struct {
 }
 
 type StaffRefreshTokenReq struct {
-	g.Meta       `path:"/refresh" tags:"Staff" method:"post" summary:"刷新令牌"`
+	g.Meta       `path:"/staff/refresh" tags:"Staff" method:"post" summary:"刷新令牌"`
 	RefreshToken string `json:"refresh_token" v:"required" description:"刷新令牌"`
 }
 type StaffRefreshTokenRes struct {
@@ -31,12 +31,12 @@ type StaffRefreshTokenRes struct {
 }
 
 type StaffLogoutReq struct {
-	g.Meta `path:"/logout" tags:"Staff" method:"post" summary:"系统用户退出登录"`
+	g.Meta `path:"/staff/logout" tags:"Staff" method:"post" summary:"系统用户退出登录"`
 }
 type StaffLogoutRes struct{}
 
 type StaffProfileReq struct {
-	g.Meta `path:"/profile" tags:"Staff" method:"get" summary:"获取当前用户信息"`
+	g.Meta `path:"/staff/profile" tags:"Staff" method:"get" summary:"获取当前用户信息"`
 }
 type StaffProfileRes struct {
 	Id          int64  `json:"id"          description:"用户ID"`
@@ -50,7 +50,7 @@ type StaffProfileRes struct {
 }
 
 type StaffPermissionsReq struct {
-	g.Meta `path:"/permissions" tags:"Staff" method:"get" summary:"获取当前用户权限和角色"`
+	g.Meta `path:"/staff/permissions" tags:"Staff" method:"get" summary:"获取当前用户权限和角色"`
 }
 type StaffPermissionsRes struct {
 	Roles       []string `json:"roles"       description:"角色名称列表"`

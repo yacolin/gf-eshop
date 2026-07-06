@@ -98,42 +98,22 @@ var (
 					productVersionsCtrl.NewV1(),
 				dashboardCtrl.NewV1(),
 				)
-				group.Group("/staff", func(group *ghttp.RouterGroup) {
-					group.Middleware(authMiddleware)
-					group.Bind(
-						staffCtrl.NewV1(),
-					)
-				})
-				group.Group("/permissions", func(group *ghttp.RouterGroup) {
-					group.Middleware(authMiddleware)
-					group.Bind(
-						permissions.NewV1(),
-					)
-				})
-				group.Group("/roles", func(group *ghttp.RouterGroup) {
-					group.Middleware(authMiddleware, middleware.RequireAdmin)
-					group.Bind(
-						roles.NewV1(),
-					)
-				})
-			group.Group("/notification", func(group *ghttp.RouterGroup) {
-				group.Middleware(authMiddleware)
-				group.Bind(
-					notification.NewV1(),
-				)
-			})
-			group.Group("/ws", func(group *ghttp.RouterGroup) {
-				group.Middleware(authMiddleware)
-				group.Bind(
-					wsCtrl.NewV1(),
-				)
-			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(authMiddleware)
 				group.Bind(
+					staffCtrl.NewV1(),
+					permissions.NewV1(),
+					notification.NewV1(),
+					wsCtrl.NewV1(),
 					ordersCtrl.NewV1(),
 					paymentsCtrl.NewV1(),
 					cartsCtrl.NewV1(),
+				)
+			})
+			group.Group("/", func(group *ghttp.RouterGroup) {
+				group.Middleware(authMiddleware, middleware.RequireAdmin)
+				group.Bind(
+					roles.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
