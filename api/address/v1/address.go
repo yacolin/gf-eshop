@@ -7,7 +7,7 @@ import (
 )
 
 type AddressCreateReq struct {
-	g.Meta    `path:"/addresses" tags:"收货地址" method:"post" summary:"新增收货地址"`
+	g.Meta    `path:"/addresses" tags:"Address" method:"post" summary:"新增收货地址"`
 	Consignee string `json:"consignee" v:"required|length:1,64" description:"收货人姓名"`
 	Phone     string `json:"phone"     v:"required|length:1,20" description:"联系电话"`
 	Country   string `json:"country"   description:"国家"`
@@ -24,7 +24,7 @@ type AddressCreateRes struct {
 }
 
 type AddressListReq struct {
-	g.Meta `path:"/addresses" tags:"收货地址" method:"get" summary:"收货地址列表"`
+	g.Meta `path:"/addresses" tags:"Address" method:"get" summary:"收货地址列表"`
 }
 type AddressListRes struct {
 	List  []*entity.Addresses `json:"list"`
@@ -32,7 +32,7 @@ type AddressListRes struct {
 }
 
 type AddressDetailReq struct {
-	g.Meta `path:"/addresses/{id}" tags:"收货地址" method:"get" summary:"地址详情"`
+	g.Meta `path:"/addresses/{id}" tags:"Address" method:"get" summary:"地址详情"`
 	Id     int64 `json:"id"`
 }
 type AddressDetailRes struct {
@@ -40,14 +40,14 @@ type AddressDetailRes struct {
 }
 
 type AddressGetDefaultReq struct {
-	g.Meta `path:"/addresses/default" tags:"收货地址" method:"get" summary:"获取默认地址"`
+	g.Meta `path:"/addresses/default" tags:"Address" method:"get" summary:"获取默认地址"`
 }
 type AddressGetDefaultRes struct {
 	*entity.Addresses
 }
 
 type AddressUpdateReq struct {
-	g.Meta    `path:"/addresses/{id}" tags:"收货地址" method:"put" summary:"更新收货地址"`
+	g.Meta    `path:"/addresses/{id}" tags:"Address" method:"put" summary:"更新收货地址"`
 	Id        int64   `json:"id"          v:"required"`
 	Consignee *string `json:"consignee" description:"收货人姓名"`
 	Phone     *string `json:"phone"     description:"联系电话"`
@@ -63,7 +63,7 @@ type AddressUpdateReq struct {
 type AddressUpdateRes struct{}
 
 type AddressDeleteReq struct {
-	g.Meta `path:"/addresses/{id}" tags:"收货地址" method:"delete" summary:"删除收货地址"`
+	g.Meta `path:"/addresses/{id}" tags:"Address" method:"delete" summary:"删除收货地址"`
 	Id     int64 `json:"id"`
 }
 type AddressDeleteRes struct{}
