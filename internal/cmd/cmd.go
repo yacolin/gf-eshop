@@ -8,6 +8,8 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gcmd"
 
+	"gf-eshop/internal/errcode"
+
 	"gf-eshop/internal/controller/brands"
 	"gf-eshop/internal/controller/categories"
 	categoryBrands "gf-eshop/internal/controller/category_brands"
@@ -71,13 +73,13 @@ var (
 
 			s := g.Server()
 			s.Group("/", func(group *ghttp.RouterGroup) {
-				group.Middleware(ghttp.MiddlewareHandlerResponse)
+				group.Middleware(middleware.ErrorHandler)
 				group.Bind(
 					hello.NewV1(),
 				)
 			})
 			s.Group("/api/v1", func(group *ghttp.RouterGroup) {
-				group.Middleware(ghttp.MiddlewareHandlerResponse)
+				group.Middleware(middleware.ErrorHandler)
 				group.Bind(
 					brands.NewV1(),
 					categories.NewV1(),
@@ -184,7 +186,7 @@ func authMiddleware(r *ghttp.Request) {
 
 	tokenStr := r.Header.Get("Authorization")
 	if tokenStr == "" {
-		r.Response.WriteJson(g.Map{"code": 401, "message": "未登录"})
+		r.SetError(errcode.ErrUnauthorized)
 		r.Exit()
 		return
 	}
@@ -192,19 +194,19 @@ func authMiddleware(r *ghttp.Request) {
 	if len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
 		tokenStr = tokenStr[7:]
 	} else {
-		r.Response.WriteJson(g.Map{"code": 401, "message": "无效的认证格式"})
+		r.SetError(errcode.ErrUnauthorized)
 		r.Exit()
 		return
 	}
 
 	claims, err := utility.ParseStaffToken(r.Context(), tokenStr)
 	if err != nil {
-		r.Response.WriteJson(g.Map{"code": 401, "message": "Token无效或已过期"})
+		r.SetError(errcode.ErrUnauthorized)
 		r.Exit()
 		return
 	}
 	if claims.TokenType != utility.TokenTypeAccess {
-		r.Response.WriteJson(g.Map{"code": 401, "message": "无效的Token类型"})
+		r.SetError(errcode.ErrUnauthorized)
 		r.Exit()
 		return
 	}
