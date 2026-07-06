@@ -62,7 +62,7 @@ func (s *sProductVersions) Detail(ctx context.Context, req *v1.ProductVersionsDe
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrProductVersionNotFound
 	}
 	return &v1.ProductVersionsDetailRes{ProductVersions: entity}, nil
 }

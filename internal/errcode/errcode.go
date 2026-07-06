@@ -53,17 +53,24 @@ const (
 	CodeInsufficientPermissions = 2002
 	CodeCannotModifySystemRole  = 2003
 	CodeCannotDeleteSystemRole  = 2004
+	CodeRoleNotFound            = 2005
 	CodeBrandNotFound       = 4001
 	CodeCategoryNotFound    = 4010
 	CodeAttributeNotFound   = 4020
 	CodeProductNotFound     = 4030
-	CodeSKUNotFound         = 4031
+	CodeSKUNotFound              = 4031
+	CodeProductVersionNotFound   = 4032
+	CodeProductDescriptionNotFound = 4033
 	CodeInventoryNotFound   = 5001
-	CodeInvalidStockChange  = 5003
-	CodePaymentNotFound     = 6001
+	CodeInvalidStockChange   = 5003
+	CodeInventoryLogNotFound = 5005
+	CodePaymentNotFound      = 6001
+	CodeCartNotFound          = 8001
 	CodeRefundNotFound      = 6010
 	CodeRefundFailed        = 6011
-	CodeInvalidOrderStatus  = 7002
+	CodeNotificationNotFound         = 9001
+	CodeNotificationTemplateNotFound = 9002
+	CodeInvalidOrderStatus           = 7002
 	CodeOrderItemNotFound   = 7003
 )
 
@@ -93,6 +100,7 @@ var (
 	ErrInsufficientPermissions = New(CodeInsufficientPermissions, "无权限，需要管理员角色")
 	ErrCannotModifySystemRole  = New(CodeCannotModifySystemRole, "不能修改系统角色")
 	ErrCannotDeleteSystemRole  = New(CodeCannotDeleteSystemRole, "不能删除系统角色")
+	ErrRoleNotFound            = New(CodeRoleNotFound, "角色不存在")
 )
 
 // ============================================================================
@@ -103,8 +111,10 @@ var (
 	ErrBrandNotFound    = New(CodeBrandNotFound, "品牌不存在")
 	ErrCategoryNotFound = New(CodeCategoryNotFound, "类目不存在")
 	ErrAttributeNotFound = New(CodeAttributeNotFound, "属性不存在")
-	ErrProductNotFound  = New(CodeProductNotFound, "产品不存在")
-	ErrSKUNotFound      = New(CodeSKUNotFound, "SKU 不存在")
+	ErrProductNotFound           = New(CodeProductNotFound, "产品不存在")
+	ErrSKUNotFound               = New(CodeSKUNotFound, "SKU 不存在")
+	ErrProductVersionNotFound    = New(CodeProductVersionNotFound, "商品版本不存在")
+	ErrProductDescriptionNotFound = New(CodeProductDescriptionNotFound, "商品描述不存在")
 )
 
 // ============================================================================
@@ -113,7 +123,16 @@ var (
 
 var (
 	ErrInventoryNotFound  = New(CodeInventoryNotFound, "库存记录不存在")
-	ErrInvalidStockChange = New(CodeInvalidStockChange, "无效的库存变动")
+	ErrInvalidStockChange  = New(CodeInvalidStockChange, "无效的库存变动")
+	ErrInventoryLogNotFound = New(CodeInventoryLogNotFound, "库存日志不存在")
+)
+
+// ============================================================================
+// 错误码：购物车域 8001-8099
+// ============================================================================
+
+var (
+	ErrCartNotFound = New(CodeCartNotFound, "购物车不存在")
 )
 
 // ============================================================================
@@ -133,4 +152,13 @@ var (
 var (
 	ErrInvalidOrderStatus = New(CodeInvalidOrderStatus, "无效的订单状态变更")
 	ErrOrderItemNotFound  = New(CodeOrderItemNotFound, "订单项不存在")
+)
+
+// ============================================================================
+// 错误码：通知域 9001-9099
+// ============================================================================
+
+var (
+	ErrNotificationNotFound         = New(CodeNotificationNotFound, "通知不存在")
+	ErrNotificationTemplateNotFound = New(CodeNotificationTemplateNotFound, "通知模板不存在")
 )

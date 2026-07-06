@@ -65,7 +65,7 @@ func (s *sInventoryLogs) Detail(ctx context.Context, req *v1.InventoryLogsDetail
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrInventoryLogNotFound
 	}
 	return &v1.InventoryLogsDetailRes{InventoryLogs: entity}, nil
 }

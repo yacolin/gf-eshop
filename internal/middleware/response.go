@@ -77,50 +77,22 @@ func ErrorHandler(r *ghttp.Request) {
 }
 
 var errorStatusMap = map[int]int{
-	// GoFrame 内置码
+	// GoFrame 内置码（框架级错误保留 HTTP 语义）
 	50: 404, // CodeNotFound
 	54: 401, // CodeNotAuthorized
 	51: 422, // CodeValidationFailed
 	53: 400, // CodeInvalidParameter
 	57: 500, // CodeOperationFailed
-	// 自定义业务码
+	// 自定义业务码（仅认证/鉴权类保留 HTTP 语义）
 	1004: 401, // ErrUnauthorized
 	1016: 401, // ErrInvalidToken
 	2002: 403, // ErrInsufficientPermissions
-	1010: 404, // ErrNotFound
-	1005: 404, // ErrUserNotFound
-	1006: 404, // ErrOrderNotFound
-	2001: 404, // ErrPermissionNotFound
-	4001: 404, // ErrBrandNotFound
-	4010: 404, // ErrCategoryNotFound
-	4030: 404, // ErrProductNotFound
-	4031: 404, // ErrSKUNotFound
-	4020: 404, // ErrAttributeNotFound
-	5001: 404, // ErrInventoryNotFound
-	6001: 404, // ErrPaymentNotFound
-	6010: 404, // ErrRefundNotFound
-	7003: 404, // ErrOrderItemNotFound
-	1008: 502, // ErrPaymentFailed
 }
 
 func mapErrorToHTTPStatus(code int) int {
 	if s, ok := errorStatusMap[code]; ok {
 		return s
 	}
-	switch {
-	case code >= 2001 && code <= 2999:
-		return 403
-	case code >= 4001 && code <= 4999:
-		return 404
-	case code >= 5001 && code <= 5999:
-		return 404
-	case code >= 6001 && code <= 6999:
-		return 404
-	case code >= 7001 && code <= 7099:
-		return 400
-	case code == 0:
-		return 200
-	default:
-		return 400
-	}
+	// 所有业务错误统一返回 200，通过 code 字段区分
+	return 200
 }

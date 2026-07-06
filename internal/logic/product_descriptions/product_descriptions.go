@@ -24,7 +24,7 @@ func (s *sProductDescriptions) Detail(ctx context.Context, req *v1.ProductDescri
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrProductDescriptionNotFound
 	}
 	return &v1.ProductDescriptionsDetailRes{ProductDescriptions: entity}, nil
 }

@@ -60,7 +60,7 @@ func readCartFromRedis(ctx context.Context, userID int64) (*v1.CartResponse, err
 		return nil, err
 	}
 	if metaVar.IsNil() {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrCartNotFound
 	}
 
 	var meta cartMeta

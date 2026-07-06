@@ -63,7 +63,7 @@ func (s *sRoles) Detail(ctx context.Context, req *v1.RoleDetailReq) (res *v1.Rol
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrRoleNotFound
 	}
 	return &v1.RoleDetailRes{Roles: entity}, nil
 }
@@ -90,7 +90,7 @@ func (s *sRoles) Update(ctx context.Context, req *v1.RoleUpdateReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrRoleNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Data(do.Roles{
 		Name:        req.Name,
@@ -112,7 +112,7 @@ func (s *sRoles) Delete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrRoleNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Where(dao.Roles.Columns().Id, req.Id).Delete()
 	if err != nil {

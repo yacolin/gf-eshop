@@ -196,7 +196,7 @@ func (s *sPermissions) RolePermissionUpdate(ctx context.Context, req *v1.RolePer
 		return nil, err
 	}
 	if roleCount == 0 {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrRoleNotFound
 	}
 	err = dao.RolePermissions.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		_, err := dao.RolePermissions.Ctx(ctx).TX(tx).Where(dao.RolePermissions.Columns().RoleId, req.RoleId).Delete()

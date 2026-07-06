@@ -202,7 +202,7 @@ func (s *sNotification) Delete(ctx context.Context, req *v1.NotificationDeleteRe
 		return nil, err
 	}
 	if count == 0 {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrNotificationNotFound
 	}
 	_, err = dao.Notifications.Ctx(ctx).
 		Where(dao.Notifications.Columns().Id, req.Id).
@@ -223,7 +223,7 @@ func (s *sNotification) SendSystem(ctx context.Context, req *v1.NotificationSend
 		var tmpl *entity.NotificationTemplates
 		tmpl, err = s.getTemplateByCode(ctx, req.TemplateCode)
 		if err != nil {
-			return nil, errcode.ErrNotFound
+			return nil, errcode.ErrNotificationTemplateNotFound
 		}
 		if title == "" {
 			title = tmpl.TitleTemplate
@@ -305,7 +305,7 @@ func (s *sNotification) getTemplateByCode(ctx context.Context, code string) (*en
 		return nil, err
 	}
 	if t == nil {
-		return nil, errcode.ErrNotFound
+		return nil, errcode.ErrNotificationTemplateNotFound
 	}
 	return t, nil
 }
