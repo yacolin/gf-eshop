@@ -44,8 +44,8 @@ func resolveUserID(ctx context.Context, userID int64) int64 {
 	if userID > 0 {
 		return userID
 	}
-	if claims := utility.GetStaffClaims(ctx); claims != nil {
-		return claims.StaffId
+	if claims := utility.GetUserClaims(ctx); claims != nil {
+		return claims.UserId
 	}
 	return 0
 }

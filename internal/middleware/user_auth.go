@@ -9,9 +9,10 @@ import (
 
 func UserAuthMiddleware(r *ghttp.Request) {
 	publicPaths := map[string]bool{
-		"/api/v1/user/auth/login":    true,
-		"/api/v1/user/auth/register": true,
-		"/api/v1/user/auth/refresh":  true,
+		"/api/v1/user/auth/login":     true,
+		"/api/v1/user/auth/register":  true,
+		"/api/v1/user/auth/refresh":   true,
+		"/api/v1/payments/callback":  true,
 	}
 
 	if publicPaths[r.URL.Path] {

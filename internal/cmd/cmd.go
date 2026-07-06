@@ -105,9 +105,6 @@ var (
 					permissions.NewV1(),
 					notification.NewV1(),
 					wsCtrl.NewV1(),
-					ordersCtrl.NewV1(),
-					paymentsCtrl.NewV1(),
-					cartsCtrl.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
@@ -122,6 +119,14 @@ var (
 					user.NewV1(),
 					user_auth.NewV1(),
 					address.NewV1(),
+				)
+			})
+			group.Group("/", func(group *ghttp.RouterGroup) {
+				group.Middleware(middleware.UserAuthMiddleware)
+				group.Bind(
+					cartsCtrl.NewV1(),
+					ordersCtrl.NewV1(),
+					paymentsCtrl.NewV1(),
 				)
 			})
 		})
@@ -165,9 +170,8 @@ var (
 
 func authMiddleware(r *ghttp.Request) {
 	publicPaths := map[string]bool{
-		"/api/v1/staff/login":        true,
-		"/api/v1/staff/refresh":      true,
-		"/api/v1/payments/callback": true,
+		"/api/v1/staff/login":   true,
+		"/api/v1/staff/refresh": true,
 	}
 
 	if publicPaths[r.URL.Path] {

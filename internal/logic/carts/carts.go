@@ -140,8 +140,8 @@ func resolveCartUserID(ctx context.Context, reqUserID int64) int64 {
 	if reqUserID > 0 {
 		return reqUserID
 	}
-	if claims := utility.GetStaffClaims(ctx); claims != nil {
-		return claims.StaffId
+	if claims := utility.GetUserClaims(ctx); claims != nil {
+		return claims.UserId
 	}
 	return 0
 }
