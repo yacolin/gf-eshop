@@ -23,7 +23,7 @@ type CartResponse struct {
 }
 
 type CartsGetReq struct {
-	g.Meta `path:"" tags:"Carts" method:"get" summary:"获取购物车"`
+	g.Meta `path:"/carts" tags:"Carts" method:"get" summary:"获取购物车"`
 }
 
 type CartsGetRes struct {
@@ -31,9 +31,9 @@ type CartsGetRes struct {
 }
 
 type CartsAddItemReq struct {
-	g.Meta  `path:"/items" tags:"Carts" method:"post" summary:"添加商品到购物车"`
-	SkuID   int64 `json:"sku_id"   v:"required" description:"SKU ID"`
-	Quantity int  `json:"quantity" v:"required|min:1|max:99" description:"数量"`
+	g.Meta   `path:"/carts/items" tags:"Carts" method:"post" summary:"添加商品到购物车"`
+	SkuID    int64 `json:"sku_id"   v:"required" description:"SKU ID"`
+	Quantity int   `json:"quantity" v:"required|min:1|max:99" description:"数量"`
 }
 
 type CartsAddItemRes struct {
@@ -41,7 +41,7 @@ type CartsAddItemRes struct {
 }
 
 type CartsUpdateItemReq struct {
-	g.Meta   `path:"/items" tags:"Carts" method:"put" summary:"更新购物车商品数量"`
+	g.Meta   `path:"/carts/items" tags:"Carts" method:"put" summary:"更新购物车商品数量"`
 	SkuID    int64 `json:"sku_id"   v:"required" description:"SKU ID"`
 	Quantity int   `json:"quantity" v:"min:0|max:99" description:"数量（为0时删除）"`
 }
@@ -51,8 +51,8 @@ type CartsUpdateItemRes struct {
 }
 
 type CartsRemoveItemReq struct {
-	g.Meta `path:"/items/{sku_id}" tags:"Carts" method:"delete" summary:"删除购物车商品"`
-	SkuID  int64 `json:"sku_id" v:"required" description:"SKU ID"`
+	g.Meta `path:"/carts/items/{sku_id}" tags:"Carts" method:"delete" summary:"删除购物车商品"`
+	SkuID  int64 `json:"sku_id"`
 }
 
 type CartsRemoveItemRes struct {
@@ -60,7 +60,7 @@ type CartsRemoveItemRes struct {
 }
 
 type CartsClearReq struct {
-	g.Meta `path:"/clear" tags:"Carts" method:"post" summary:"清空购物车"`
+	g.Meta `path:"/carts/clear" tags:"Carts" method:"post" summary:"清空购物车"`
 }
 
 type CartsClearRes struct {

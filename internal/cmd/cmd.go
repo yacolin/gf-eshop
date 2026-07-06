@@ -123,21 +123,11 @@ var (
 					wsCtrl.NewV1(),
 				)
 			})
-			group.Group("/orders", func(group *ghttp.RouterGroup) {
+			group.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(authMiddleware)
 				group.Bind(
 					ordersCtrl.NewV1(),
-				)
-			})
-			group.Group("/payments", func(group *ghttp.RouterGroup) {
-				group.Middleware(authMiddleware)
-				group.Bind(
 					paymentsCtrl.NewV1(),
-				)
-			})
-			group.Group("/carts", func(group *ghttp.RouterGroup) {
-				group.Middleware(authMiddleware)
-				group.Bind(
 					cartsCtrl.NewV1(),
 				)
 			})

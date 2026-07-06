@@ -307,6 +307,29 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 		items = make([]*entity.OrderItems, 0)
 	}
 
+	// 回填 product_name（兼容旧数据将 sku_spec 误存为 product_name）
+	var productIDs []int64
+	for _, item := range items {
+		if item.ProductId > 0 {
+			productIDs = append(productIDs, item.ProductId)
+		}
+	}
+	if len(productIDs) > 0 {
+		var products []*entity.Products
+		_ = dao.Products.Ctx(ctx).WhereIn(dao.Products.Columns().Id, productIDs).Scan(&products)
+		nameByID := make(map[int64]string, len(products))
+		for _, p := range products {
+			if p.Name != "" {
+				nameByID[p.Id] = p.Name
+			}
+		}
+		for _, item := range items {
+			if name, ok := nameByID[item.ProductId]; ok {
+				item.ProductName = name
+			}
+		}
+	}
+
 	return &v1.OrdersDetailRes{
 		Order:     order,
 		SubOrders: subOrders,
