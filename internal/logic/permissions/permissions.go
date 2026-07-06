@@ -4,11 +4,10 @@ import (
 	"context"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 
 	"gf-eshop/api/permissions/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -70,7 +69,7 @@ func (s *sPermissions) Detail(ctx context.Context, req *v1.PermissionDetailReq) 
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "权限不存在")
+		return nil, errcode.ErrPermissionNotFound
 	}
 	return &v1.PermissionDetailRes{Permissions: entity}, nil
 }
@@ -78,14 +77,14 @@ func (s *sPermissions) Detail(ctx context.Context, req *v1.PermissionDetailReq) 
 func (s *sPermissions) checkAdmin(ctx context.Context) error {
 	claims := utility.GetStaffClaims(ctx)
 	if claims == nil {
-		return gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return errcode.ErrUnauthorized
 	}
 	isAdmin, err := service.Roles().IsAdmin(ctx, claims.StaffId)
 	if err != nil {
 		return err
 	}
 	if !isAdmin {
-		return gerror.NewCode(gcode.CodeOperationFailed, "无权限，需要管理员角色")
+		return errcode.ErrInsufficientPermissions
 	}
 	return nil
 }
@@ -120,7 +119,7 @@ func (s *sPermissions) Update(ctx context.Context, req *v1.PermissionUpdateReq) 
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "权限不存在")
+		return nil, errcode.ErrPermissionNotFound
 	}
 	_, err = dao.Permissions.Ctx(ctx).Data(do.Permissions{
 		Name:        req.Name,
@@ -147,7 +146,7 @@ func (s *sPermissions) Delete(ctx context.Context, req *v1.PermissionDeleteReq) 
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "权限不存在")
+		return nil, errcode.ErrPermissionNotFound
 	}
 	_, err = dao.Permissions.Ctx(ctx).Where(dao.Permissions.Columns().Id, req.Id).Delete()
 	if err != nil {
@@ -197,7 +196,7 @@ func (s *sPermissions) RolePermissionUpdate(ctx context.Context, req *v1.RolePer
 		return nil, err
 	}
 	if roleCount == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "角色不存在")
+		return nil, errcode.ErrNotFound
 	}
 	err = dao.RolePermissions.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		_, err := dao.RolePermissions.Ctx(ctx).TX(tx).Where(dao.RolePermissions.Columns().RoleId, req.RoleId).Delete()

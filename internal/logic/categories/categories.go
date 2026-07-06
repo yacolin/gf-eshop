@@ -5,12 +5,12 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 
 	"gf-eshop/api/categories/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -42,7 +42,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v
 			return &v1.CategoryListRes{List: list, Total: total}, nil
 		}
 		if ctx.Err() != nil {
-			return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+			return nil, gerror.NewCode(errcode.Code(57), "请求已取消")
 		}
 		ensureCategoryCache(ctx)
 		list, total, err = getCategoryPage(ctx, page, size)
@@ -141,7 +141,7 @@ func (s *sCategories) All(ctx context.Context, req *v1.CategoryAllReq) (res *v1.
 		}
 	}
 	if ctx.Err() != nil {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+		return nil, gerror.NewCode(errcode.Code(57), "请求已取消")
 	}
 	ensureCategoryCache(ctx)
 	// 兜底：查 DB
@@ -247,7 +247,7 @@ func (s *sCategories) Detail(ctx context.Context, req *v1.CategoryDetailReq) (re
 		return &v1.CategoryDetailRes{Categories: cached}, nil
 	}
 	if ctx.Err() != nil {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+		return nil, gerror.NewCode(errcode.Code(57), "请求已取消")
 	}
 
 	var entity *entity.Categories
@@ -256,7 +256,7 @@ func (s *sCategories) Detail(ctx context.Context, req *v1.CategoryDetailReq) (re
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "类目不存在")
+		return nil, errcode.ErrCategoryNotFound
 	}
 	if err := setCategoryEntityCache(context.Background(), entity); err != nil {
 		g.Log().Warning(ctx, "setCategoryEntityCache failed: %v", err)
@@ -290,7 +290,7 @@ func (s *sCategories) Update(ctx context.Context, req *v1.CategoryUpdateReq) (re
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "类目不存在")
+		return nil, errcode.ErrCategoryNotFound
 	}
 	_, err = dao.Categories.Ctx(ctx).Data(do.Categories{
 		Name:      req.Name,

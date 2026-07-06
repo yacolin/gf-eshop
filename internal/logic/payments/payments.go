@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/grand"
 
 	"gf-eshop/api/payments/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
 )
@@ -41,7 +40,7 @@ func (s *sPayments) CreatePayment(ctx context.Context, req *v1.PaymentsCreateReq
 		return nil, err
 	}
 	if order == nil {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "订单不存在")
+		return nil, errcode.ErrOrderNotFound
 	}
 
 	var payment *entity.Payments
@@ -101,7 +100,7 @@ func (s *sPayments) HandleCallback(ctx context.Context, req *v1.PaymentsCallback
 		return nil, err
 	}
 	if payment == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "支付记录不存在")
+		return nil, errcode.ErrPaymentNotFound
 	}
 
 	err = dao.Payments.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
@@ -178,7 +177,7 @@ func (s *sPayments) GetPayment(ctx context.Context, req *v1.PaymentsGetReq) (res
 	} else if req.OrderNo != "" {
 		m = m.Where(dao.Payments.Columns().OrderNo, req.OrderNo)
 	} else {
-		return nil, gerror.NewCode(gcode.CodeMissingParameter, "请提供支付单号或订单号")
+		return nil, errcode.ErrInvalidParams
 	}
 
 	var payment *entity.Payments
@@ -187,7 +186,7 @@ func (s *sPayments) GetPayment(ctx context.Context, req *v1.PaymentsGetReq) (res
 		return nil, err
 	}
 	if payment == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "支付记录不存在")
+		return nil, errcode.ErrPaymentNotFound
 	}
 	return &v1.PaymentsGetRes{Payments: payment}, nil
 }
@@ -200,7 +199,7 @@ func (s *sPayments) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) 
 		return nil, err
 	}
 	if payment == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "支付记录不存在")
+		return nil, errcode.ErrPaymentNotFound
 	}
 
 	refundNo := generateRefundNo()
@@ -309,7 +308,7 @@ func (s *sPayments) DetailRefund(ctx context.Context, req *v1.RefundsDetailReq) 
 		return nil, err
 	}
 	if refund == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "退款记录不存在")
+		return nil, errcode.ErrRefundNotFound
 	}
 	return &v1.RefundsDetailRes{Refunds: refund}, nil
 }

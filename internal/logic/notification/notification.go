@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 
 	"gf-eshop/api/notification/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -37,14 +36,14 @@ func (s *sNotification) getStaffId(ctx context.Context) int64 {
 func (s *sNotification) checkAdmin(ctx context.Context) error {
 	claims := utility.GetStaffClaims(ctx)
 	if claims == nil {
-		return gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return errcode.ErrUnauthorized
 	}
 	isAdmin, err := service.Roles().IsAdmin(ctx, claims.StaffId)
 	if err != nil {
 		return err
 	}
 	if !isAdmin {
-		return gerror.NewCode(gcode.CodeOperationFailed, "无权限，需要管理员角色")
+		return errcode.ErrInsufficientPermissions
 	}
 	return nil
 }
@@ -52,7 +51,7 @@ func (s *sNotification) checkAdmin(ctx context.Context) error {
 func (s *sNotification) List(ctx context.Context, req *v1.NotificationListReq) (res *v1.NotificationListRes, err error) {
 	staffId := s.getStaffId(ctx)
 	if staffId == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	page := req.Page
 	size := req.PageSize
@@ -142,7 +141,7 @@ func (s *sNotification) getReadSet(ctx context.Context, staffId int64, notificat
 func (s *sNotification) UnreadCount(ctx context.Context, req *v1.NotificationUnreadCountReq) (res *v1.NotificationUnreadCountRes, err error) {
 	staffId := s.getStaffId(ctx)
 	if staffId == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	count, err := dao.Notifications.Ctx(ctx).
 		Where(dao.Notifications.Columns().UserId+" IN (0, ?)", staffId).
@@ -158,7 +157,7 @@ func (s *sNotification) UnreadCount(ctx context.Context, req *v1.NotificationUnr
 func (s *sNotification) MarkAsRead(ctx context.Context, req *v1.NotificationMarkAsReadReq) (res *v1.NotificationMarkAsReadRes, err error) {
 	staffId := s.getStaffId(ctx)
 	if staffId == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	_, err = g.DB().Exec(ctx,
 		"INSERT IGNORE INTO base_notification_reads (notification_id, user_id, read_at) VALUES (?, ?, ?)",
@@ -173,7 +172,7 @@ func (s *sNotification) MarkAsRead(ctx context.Context, req *v1.NotificationMark
 func (s *sNotification) MarkAllAsRead(ctx context.Context, req *v1.NotificationMarkAllAsReadReq) (res *v1.NotificationMarkAllAsReadRes, err error) {
 	staffId := s.getStaffId(ctx)
 	if staffId == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	_, err = g.DB().Exec(ctx, `
 		INSERT IGNORE INTO base_notification_reads (notification_id, user_id, read_at)
@@ -193,7 +192,7 @@ func (s *sNotification) MarkAllAsRead(ctx context.Context, req *v1.NotificationM
 func (s *sNotification) Delete(ctx context.Context, req *v1.NotificationDeleteReq) (res *v1.NotificationDeleteRes, err error) {
 	staffId := s.getStaffId(ctx)
 	if staffId == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	count, err := dao.Notifications.Ctx(ctx).
 		Where(dao.Notifications.Columns().Id, req.Id).
@@ -203,7 +202,7 @@ func (s *sNotification) Delete(ctx context.Context, req *v1.NotificationDeleteRe
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "通知不存在")
+		return nil, errcode.ErrNotFound
 	}
 	_, err = dao.Notifications.Ctx(ctx).
 		Where(dao.Notifications.Columns().Id, req.Id).
@@ -224,7 +223,7 @@ func (s *sNotification) SendSystem(ctx context.Context, req *v1.NotificationSend
 		var tmpl *entity.NotificationTemplates
 		tmpl, err = s.getTemplateByCode(ctx, req.TemplateCode)
 		if err != nil {
-			return nil, gerror.NewCode(gcode.CodeInvalidParameter, "模板不存在")
+			return nil, errcode.ErrNotFound
 		}
 		if title == "" {
 			title = tmpl.TitleTemplate
@@ -234,7 +233,7 @@ func (s *sNotification) SendSystem(ctx context.Context, req *v1.NotificationSend
 		}
 	}
 	if title == "" || content == "" {
-		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "标题和内容不能为空（请提供模板代码或直接填写）")
+		return nil, errcode.ErrInvalidParams
 	}
 	result, err := dao.Notifications.Ctx(ctx).Insert(do.Notifications{
 		UserId:    req.UserId,
@@ -306,7 +305,7 @@ func (s *sNotification) getTemplateByCode(ctx context.Context, code string) (*en
 		return nil, err
 	}
 	if t == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "模板不存在")
+		return nil, errcode.ErrNotFound
 	}
 	return t, nil
 }

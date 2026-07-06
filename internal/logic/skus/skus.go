@@ -3,12 +3,11 @@ package skus
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 
 	"gf-eshop/api/skus/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -66,7 +65,7 @@ func (s *sSkus) Detail(ctx context.Context, req *v1.SkusDetailReq) (res *v1.Skus
 		return nil, err
 	}
 	if sku == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "SKU不存在")
+		return nil, errcode.ErrSKUNotFound
 	}
 	available, status := loadSKUInventory(ctx, sku.Id)
 	return &v1.SkusDetailRes{
@@ -83,7 +82,7 @@ func (s *sSkus) GetByCode(ctx context.Context, req *v1.SkusGetByCodeReq) (res *v
 		return nil, err
 	}
 	if sku == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "SKU不存在")
+		return nil, errcode.ErrSKUNotFound
 	}
 	available, status := loadSKUInventory(ctx, sku.Id)
 	return &v1.SkusGetByCodeRes{
@@ -125,7 +124,7 @@ func (s *sSkus) Update(ctx context.Context, req *v1.SkusUpdateReq) (res *v1.Skus
 		return nil, err
 	}
 	if sku == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "SKU不存在")
+		return nil, errcode.ErrSKUNotFound
 	}
 
 	// 仅组装非 nil 字段，实现部分更新

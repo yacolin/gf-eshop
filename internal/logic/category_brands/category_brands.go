@@ -4,11 +4,10 @@ import (
 	"context"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 
 	"gf-eshop/api/category_brands/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/service"
 )
@@ -57,7 +56,7 @@ func (s *sCategoryBrands) Update(ctx context.Context, req *v1.CategoryBrandUpdat
 		return nil, err
 	}
 	if categoryCount == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "类目不存在")
+		return nil, errcode.ErrCategoryNotFound
 	}
 	// 前置校验：品牌是否存在
 	if len(req.BrandIDs) > 0 {
@@ -66,7 +65,7 @@ func (s *sCategoryBrands) Update(ctx context.Context, req *v1.CategoryBrandUpdat
 			return nil, err
 		}
 		if brandCount != len(req.BrandIDs) {
-			return nil, gerror.NewCode(gcode.CodeInvalidParameter, "部分品牌不存在")
+			return nil, errcode.ErrInvalidParams
 		}
 	}
 

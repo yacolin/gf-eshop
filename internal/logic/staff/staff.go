@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
@@ -13,6 +12,7 @@ import (
 
 	"gf-eshop/api/staff/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -57,21 +57,21 @@ func (s *sStaff) Login(ctx context.Context, req *v1.StaffLoginReq) (res *v1.Staf
 		return nil, err
 	}
 	if staff == nil {
-		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "用户名或密码错误")
+		return nil, errcode.ErrInvalidCredentials
 	}
 	if staff.Status != 1 {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "账号已被禁用")
+		return nil, errcode.ErrAccountDisabled
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(staff.PasswordHash), []byte(req.Password))
 	if err != nil {
-		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "用户名或密码错误")
+		return nil, errcode.ErrInvalidCredentials
 	}
 
 	now := time.Now()
 	pair, err := utility.GenerateTokenPair(ctx, staff.Id, staff.Username, staff.RealName)
 	if err != nil {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "生成Token失败")
+		return nil, gerror.NewCode(errcode.Code(57), "生成Token失败")
 	}
 
 	ip := g.RequestFromCtx(ctx).GetClientIp()
@@ -99,16 +99,16 @@ func (s *sStaff) Login(ctx context.Context, req *v1.StaffLoginReq) (res *v1.Staf
 func (s *sStaff) RefreshToken(ctx context.Context, req *v1.StaffRefreshTokenReq) (res *v1.StaffRefreshTokenRes, err error) {
 	claims, err := utility.ParseStaffToken(ctx, req.RefreshToken)
 	if err != nil {
-		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "RefreshToken无效或已过期")
+		return nil, errcode.ErrInvalidToken
 	}
 	if claims.TokenType != utility.TokenTypeRefresh {
-		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "无效的Token类型")
+		return nil, errcode.ErrInvalidParams
 	}
 
 	key := refreshRedisKey(claims.StaffId, claims.TokenId)
 	v, err := g.Redis().Do(ctx, "GET", key)
 	if err != nil || v.IsNil() {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "RefreshToken已失效")
+		return nil, errcode.ErrInvalidToken
 	}
 
 	deleteRefreshToken(ctx, claims.StaffId, claims.TokenId)
@@ -118,15 +118,15 @@ func (s *sStaff) RefreshToken(ctx context.Context, req *v1.StaffRefreshTokenReq)
 		Where(dao.Staff.Columns().Id, claims.StaffId).
 		Scan(&staff)
 	if err != nil || staff == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "用户不存在")
+		return nil, errcode.ErrUserNotFound
 	}
 	if staff.Status != 1 {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "账号已被禁用")
+		return nil, errcode.ErrAccountDisabled
 	}
 
 	pair, err := utility.GenerateTokenPair(ctx, staff.Id, staff.Username, staff.RealName)
 	if err != nil {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "生成Token失败")
+		return nil, gerror.NewCode(errcode.Code(57), "生成Token失败")
 	}
 
 	refreshClaims, _ := utility.ParseStaffToken(ctx, pair.RefreshToken)
@@ -153,7 +153,7 @@ func (s *sStaff) Logout(ctx context.Context, req *v1.StaffLogoutReq) (res *v1.St
 func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error) {
 	claims := utility.GetStaffClaims(ctx)
 	if claims == nil {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 
 	var staff *entity.Staff
@@ -164,7 +164,7 @@ func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.
 		return nil, err
 	}
 	if staff == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "用户不存在")
+		return nil, errcode.ErrUserNotFound
 	}
 
 	return &v1.StaffProfileRes{
@@ -182,7 +182,7 @@ func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.
 func (s *sStaff) Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (res *v1.StaffPermissionsRes, err error) {
 	claims := utility.GetStaffClaims(ctx)
 	if claims == nil {
-		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 	perms, roles, err := service.Roles().GetPermissions(ctx, claims.StaffId)
 	if err != nil {

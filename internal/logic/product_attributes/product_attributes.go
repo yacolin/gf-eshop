@@ -3,11 +3,9 @@ package productAttributes
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/product_attributes/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -77,7 +75,7 @@ func (s *sProductAttributes) Delete(ctx context.Context, req *v1.ProductAttribut
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "属性值不存在")
+		return nil, errcode.ErrAttributeNotFound
 	}
 
 	_, err = dao.ProductAttributes.Ctx(ctx).Where(dao.ProductAttributes.Columns().Id, req.Id).Delete()

@@ -5,12 +5,11 @@ import (
 	"database/sql"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 
 	"gf-eshop/api/inventories/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -71,7 +70,7 @@ func (s *sInventories) Detail(ctx context.Context, req *v1.InventoriesDetailReq)
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "库存记录不存在")
+		return nil, errcode.ErrInventoryNotFound
 	}
 	return &v1.InventoriesDetailRes{Inventories: entity}, nil
 }
@@ -96,7 +95,7 @@ func (s *sInventories) Update(ctx context.Context, req *v1.InventoriesUpdateReq)
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "库存记录不存在")
+		return nil, errcode.ErrInventoryNotFound
 	}
 
 	_, err = dao.Inventories.Ctx(ctx).Data(do.Inventories{
@@ -131,7 +130,7 @@ func (s *sInventories) Lock(ctx context.Context, req *v1.InventoriesLockReq) (re
 		}
 		available := inv.Quantity - inv.Reserved
 		if available < req.Quantity {
-			return gerror.NewCode(gcode.CodeValidationFailed, "库存不足")
+			return errcode.ErrInsufficientStock
 		}
 		beforeQty, beforeRes := inv.Quantity, inv.Reserved
 		inv.Reserved += req.Quantity
@@ -166,7 +165,7 @@ func (s *sInventories) Unlock(ctx context.Context, req *v1.InventoriesUnlockReq)
 			return err
 		}
 		if inv.Reserved < req.Quantity {
-			return gerror.NewCode(gcode.CodeValidationFailed, "预占库存不足，无法释放")
+			return errcode.ErrInvalidStockChange
 		}
 		beforeQty, beforeRes := inv.Quantity, inv.Reserved
 		inv.Reserved -= req.Quantity
@@ -201,7 +200,7 @@ func (s *sInventories) Deduct(ctx context.Context, req *v1.InventoriesDeductReq)
 			return err
 		}
 		if inv.Quantity < req.Quantity || inv.Reserved < req.Quantity {
-			return gerror.NewCode(gcode.CodeValidationFailed, "库存不足")
+			return errcode.ErrInsufficientStock
 		}
 		beforeQty, beforeRes := inv.Quantity, inv.Reserved
 		inv.Quantity -= req.Quantity
@@ -273,7 +272,7 @@ func (s *sInventories) GetStock(ctx context.Context, req *v1.InventoriesGetStock
 		return nil, err
 	}
 	if inv == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "库存记录不存在")
+		return nil, errcode.ErrInventoryNotFound
 	}
 	return &v1.InventoriesGetStockRes{Inventories: inv}, nil
 }

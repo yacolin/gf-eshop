@@ -3,11 +3,9 @@ package inventories
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/inventories/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -60,7 +58,7 @@ func (s *sWarehouses) Detail(ctx context.Context, req *v1.WarehousesDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "仓库不存在")
+		return nil, errcode.ErrInventoryNotFound
 	}
 	return &v1.WarehousesDetailRes{Warehouses: entity}, nil
 }
@@ -88,7 +86,7 @@ func (s *sWarehouses) Update(ctx context.Context, req *v1.WarehousesUpdateReq) (
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "仓库不存在")
+		return nil, errcode.ErrInventoryNotFound
 	}
 
 	_, err = dao.Warehouses.Ctx(ctx).Data(do.Warehouses{

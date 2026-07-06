@@ -9,13 +9,12 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 
 	"gf-eshop/api/carts/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
 	"gf-eshop/utility"
@@ -61,7 +60,7 @@ func readCartFromRedis(ctx context.Context, userID int64) (*v1.CartResponse, err
 		return nil, err
 	}
 	if metaVar.IsNil() {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "cart not in redis")
+		return nil, errcode.ErrNotFound
 	}
 
 	var meta cartMeta
@@ -220,7 +219,7 @@ func (s *sCarts) GetCart(ctx context.Context, req *v1.CartsGetReq) (res *v1.Cart
 func (s *sCarts) AddItem(ctx context.Context, req *v1.CartsAddItemReq) (res *v1.CartsAddItemRes, err error) {
 	userID := resolveCartUserID(ctx, 0)
 	if userID == 0 {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 
 	// 校验 SKU
@@ -230,7 +229,7 @@ func (s *sCarts) AddItem(ctx context.Context, req *v1.CartsAddItemReq) (res *v1.
 		return nil, err
 	}
 	if sku.Id == 0 {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "SKU不存在")
+		return nil, errcode.ErrSKUNotFound
 	}
 
 	resp, err := s.loadOrCreateCart(ctx, userID)
@@ -278,7 +277,7 @@ func (s *sCarts) AddItem(ctx context.Context, req *v1.CartsAddItemReq) (res *v1.
 func (s *sCarts) UpdateItem(ctx context.Context, req *v1.CartsUpdateItemReq) (res *v1.CartsUpdateItemRes, err error) {
 	userID := resolveCartUserID(ctx, 0)
 	if userID == 0 {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 
 	resp, err := s.loadOrCreateCart(ctx, userID)
@@ -312,7 +311,7 @@ func (s *sCarts) UpdateItem(ctx context.Context, req *v1.CartsUpdateItemReq) (re
 func (s *sCarts) RemoveItem(ctx context.Context, req *v1.CartsRemoveItemReq) (res *v1.CartsRemoveItemRes, err error) {
 	userID := resolveCartUserID(ctx, 0)
 	if userID == 0 {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 
 	resp, err := s.loadOrCreateCart(ctx, userID)
@@ -336,7 +335,7 @@ func (s *sCarts) RemoveItem(ctx context.Context, req *v1.CartsRemoveItemReq) (re
 func (s *sCarts) ClearCart(ctx context.Context, req *v1.CartsClearReq) (res *v1.CartsClearRes, err error) {
 	userID := resolveCartUserID(ctx, 0)
 	if userID == 0 {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "未登录")
+		return nil, errcode.ErrUnauthorized
 	}
 
 	delCartFromRedis(ctx, userID)

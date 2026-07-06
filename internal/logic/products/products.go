@@ -9,14 +9,13 @@ import (
 	"strings"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"gf-eshop/api/products/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -190,7 +189,7 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 
 		// 2. Bloom Filter 快速拦截（未预热时 count==0 放行）
 		if !productBloom.mayExist(req.Id) {
-			return gerror.NewCode(gcode.CodeNotFound, "商品不存在")
+			return errcode.ErrProductNotFound
 		}
 
 		// 3. L2 Redis
@@ -207,7 +206,7 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 			return err
 		}
 		if p == nil {
-			return gerror.NewCode(gcode.CodeNotFound, "商品不存在")
+			return errcode.ErrProductNotFound
 		}
 		product = p
 		// 回填所有缓存层级
@@ -254,7 +253,7 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 	}
 
 	if product == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "商品不存在")
+		return nil, errcode.ErrProductNotFound
 	}
 
 	// 从 SKU 实体映射为 SkuDetailItem，加载库存
@@ -288,7 +287,7 @@ func (s *sProducts) DetailPure(ctx context.Context, req *v1.ProductsDetailPureRe
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "商品不存在")
+		return nil, errcode.ErrProductNotFound
 	}
 	return &v1.ProductsDetailPureRes{Products: entity}, nil
 }
@@ -427,7 +426,7 @@ func (s *sProducts) Update(ctx context.Context, req *v1.ProductsUpdateReq) (res 
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "商品不存在")
+		return nil, errcode.ErrProductNotFound
 	}
 
 	_, err = dao.Products.Ctx(ctx).Data(do.Products{

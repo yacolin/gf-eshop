@@ -1,13 +1,20 @@
 package errcode
 
 import (
+	"fmt"
+
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 )
 
-// New 创建一个业务错误码，code 为稳定标识（一旦发布即永久保留）
+// New 创建一个业务错误，code 为稳定标识（一旦发布即永久保留）
 func New(code int, msg string) error {
 	return gerror.NewCode(gcode.New(code, "", nil), msg)
+}
+
+// Newf 创建带格式化消息的业务错误
+func Newf(code int, format string, args ...interface{}) error {
+	return gerror.NewCode(gcode.New(code, "", nil), fmt.Sprintf(format, args...))
 }
 
 // CodeOf 提取错误码，未设置时返回 0
@@ -22,58 +29,108 @@ func CodeOf(err error) int {
 	return c.Code()
 }
 
-// ── 通用域 1001-1999 ──
+// Code 返回一个 gcode.Code 值，用于 gerror.NewCode(code, msg) 动态消息
+func Code(n int) gcode.Code {
+	return gcode.New(n, "", nil)
+}
 
-var (
-	ErrInvalidParams       = New(1002, "参数错误")
-	ErrUnauthorized        = New(1004, "未授权，请先登录")
-	ErrUserNotFound        = New(1005, "用户不存在")
-	ErrOrderNotFound       = New(1006, "订单不存在")
-	ErrPaymentFailed       = New(1008, "支付失败")
-	ErrInvalidCredentials  = New(1009, "用户名或密码错误")
-	ErrNotFound            = New(1010, "资源不存在")
-	ErrAccountDisabled     = New(1011, "账号已被禁用")
-	ErrInvalidToken        = New(1016, "Token 无效或已过期")
-	ErrInsufficientStock   = New(1024, "库存不足")
+// ============================================================================
+// 错误码常量（用于动态消息的 errcode.Newf 调用）
+// ============================================================================
+
+const (
+	CodeInvalidParams       = 1002
+	CodeUnauthorized        = 1004
+	CodeUserNotFound        = 1005
+	CodeOrderNotFound       = 1006
+	CodePaymentFailed       = 1008
+	CodeInvalidCredentials  = 1009
+	CodeNotFound            = 1010
+	CodeAccountDisabled     = 1011
+	CodeInvalidToken        = 1016
+	CodeInsufficientStock   = 1024
+	CodePermissionNotFound  = 2001
+	CodeInsufficientPermissions = 2002
+	CodeCannotModifySystemRole  = 2003
+	CodeCannotDeleteSystemRole  = 2004
+	CodeBrandNotFound       = 4001
+	CodeCategoryNotFound    = 4010
+	CodeAttributeNotFound   = 4020
+	CodeProductNotFound     = 4030
+	CodeSKUNotFound         = 4031
+	CodeInventoryNotFound   = 5001
+	CodeInvalidStockChange  = 5003
+	CodePaymentNotFound     = 6001
+	CodeRefundNotFound      = 6010
+	CodeRefundFailed        = 6011
+	CodeInvalidOrderStatus  = 7002
+	CodeOrderItemNotFound   = 7003
 )
 
-// ── 权限域 2001-2999 ──
+// ============================================================================
+// 错误码：通用域 1001-1999
+// ============================================================================
 
 var (
-	ErrPermissionNotFound      = New(2001, "权限不存在")
-	ErrInsufficientPermissions = New(2002, "无权限，需要管理员角色")
-	ErrCannotModifySystemRole  = New(2003, "不能修改系统角色")
-	ErrCannotDeleteSystemRole  = New(2004, "不能删除系统角色")
+	ErrInvalidParams       = New(CodeInvalidParams, "参数错误")
+	ErrUnauthorized        = New(CodeUnauthorized, "未授权，请先登录")
+	ErrUserNotFound        = New(CodeUserNotFound, "用户不存在")
+	ErrOrderNotFound       = New(CodeOrderNotFound, "订单不存在")
+	ErrPaymentFailed       = New(CodePaymentFailed, "支付失败")
+	ErrInvalidCredentials  = New(CodeInvalidCredentials, "用户名或密码错误")
+	ErrNotFound            = New(CodeNotFound, "资源不存在")
+	ErrAccountDisabled     = New(CodeAccountDisabled, "账号已被禁用")
+	ErrInvalidToken        = New(CodeInvalidToken, "Token 无效或已过期")
+	ErrInsufficientStock   = New(CodeInsufficientStock, "库存不足")
 )
 
-// ── 品牌/商品域 4001-4099 ──
+// ============================================================================
+// 错误码：权限域 2001-2999
+// ============================================================================
 
 var (
-	ErrBrandNotFound    = New(4001, "品牌不存在")
-	ErrCategoryNotFound = New(4010, "类目不存在")
-	ErrProductNotFound  = New(4030, "产品不存在")
-	ErrSKUNotFound      = New(4031, "SKU 不存在")
-	ErrAttributeNotFound = New(4020, "属性不存在")
+	ErrPermissionNotFound      = New(CodePermissionNotFound, "权限不存在")
+	ErrInsufficientPermissions = New(CodeInsufficientPermissions, "无权限，需要管理员角色")
+	ErrCannotModifySystemRole  = New(CodeCannotModifySystemRole, "不能修改系统角色")
+	ErrCannotDeleteSystemRole  = New(CodeCannotDeleteSystemRole, "不能删除系统角色")
 )
 
-// ── 库存域 5001-5099 ──
+// ============================================================================
+// 错误码：品牌/商品域 4001-4099
+// ============================================================================
 
 var (
-	ErrInventoryNotFound  = New(5001, "库存记录不存在")
-	ErrInvalidStockChange = New(5003, "无效的库存变动")
+	ErrBrandNotFound    = New(CodeBrandNotFound, "品牌不存在")
+	ErrCategoryNotFound = New(CodeCategoryNotFound, "类目不存在")
+	ErrAttributeNotFound = New(CodeAttributeNotFound, "属性不存在")
+	ErrProductNotFound  = New(CodeProductNotFound, "产品不存在")
+	ErrSKUNotFound      = New(CodeSKUNotFound, "SKU 不存在")
 )
 
-// ── 交易域 6001-6099 ──
+// ============================================================================
+// 错误码：库存域 5001-5099
+// ============================================================================
 
 var (
-	ErrPaymentNotFound = New(6001, "支付记录不存在")
-	ErrRefundNotFound  = New(6010, "退款记录不存在")
-	ErrRefundFailed    = New(6011, "退款失败")
+	ErrInventoryNotFound  = New(CodeInventoryNotFound, "库存记录不存在")
+	ErrInvalidStockChange = New(CodeInvalidStockChange, "无效的库存变动")
 )
 
-// ── 订单域 7001-7099 ──
+// ============================================================================
+// 错误码：交易域 6001-6099
+// ============================================================================
 
 var (
-	ErrInvalidOrderStatus = New(7002, "无效的订单状态变更")
-	ErrOrderItemNotFound  = New(7003, "订单项不存在")
+	ErrPaymentNotFound = New(CodePaymentNotFound, "支付记录不存在")
+	ErrRefundNotFound  = New(CodeRefundNotFound, "退款记录不存在")
+	ErrRefundFailed    = New(CodeRefundFailed, "退款失败")
+)
+
+// ============================================================================
+// 错误码：订单域 7001-7099
+// ============================================================================
+
+var (
+	ErrInvalidOrderStatus = New(CodeInvalidOrderStatus, "无效的订单状态变更")
+	ErrOrderItemNotFound  = New(CodeOrderItemNotFound, "订单项不存在")
 )

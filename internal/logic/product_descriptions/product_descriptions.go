@@ -3,11 +3,9 @@ package productDescriptions
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/product_descriptions/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -26,7 +24,7 @@ func (s *sProductDescriptions) Detail(ctx context.Context, req *v1.ProductDescri
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "商品详情不存在")
+		return nil, errcode.ErrNotFound
 	}
 	return &v1.ProductDescriptionsDetailRes{ProductDescriptions: entity}, nil
 }

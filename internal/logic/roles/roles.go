@@ -3,11 +3,9 @@ package roles
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/roles/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -65,7 +63,7 @@ func (s *sRoles) Detail(ctx context.Context, req *v1.RoleDetailReq) (res *v1.Rol
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "角色不存在")
+		return nil, errcode.ErrNotFound
 	}
 	return &v1.RoleDetailRes{Roles: entity}, nil
 }
@@ -92,7 +90,7 @@ func (s *sRoles) Update(ctx context.Context, req *v1.RoleUpdateReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "角色不存在")
+		return nil, errcode.ErrNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Data(do.Roles{
 		Name:        req.Name,
@@ -114,7 +112,7 @@ func (s *sRoles) Delete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "角色不存在")
+		return nil, errcode.ErrNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Where(dao.Roles.Columns().Id, req.Id).Delete()
 	if err != nil {

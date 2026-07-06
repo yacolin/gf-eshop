@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/gogf/gf/v2/util/grand"
 
 	"gf-eshop/api/orders/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
 	"gf-eshop/utility"
@@ -77,7 +76,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 				return err
 			}
 			if sku.Id == 0 {
-				return gerror.NewCode(gcode.CodeValidationFailed, fmt.Sprintf("SKU不存在: %d", ri.SkuID))
+				return errcode.Newf(errcode.CodeSKUNotFound, "SKU不存在: %d", ri.SkuID)
 			}
 
 			// 锁定库存：检查可用库存 >= 需求数量
@@ -90,12 +89,11 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 				return err
 			}
 			if inv.Id == 0 {
-				return gerror.NewCode(gcode.CodeValidationFailed, fmt.Sprintf("SKU库存不足: %d", ri.SkuID))
+				return errcode.Newf(errcode.CodeInsufficientStock, "SKU库存不足: %d", ri.SkuID)
 			}
 			availableQty := inv.Quantity - inv.Reserved
 			if availableQty < int64(ri.Quantity) {
-				return gerror.NewCode(gcode.CodeValidationFailed,
-					fmt.Sprintf("SKU库存不足: %d (可用%d, 需要%d)", ri.SkuID, availableQty, ri.Quantity))
+			return errcode.Newf(errcode.CodeInsufficientStock, "SKU库存不足: %d (可用%d, 需要%d)", ri.SkuID, availableQty, ri.Quantity)
 			}
 
 			// 获取商品名称（从 SPU 表）
@@ -286,7 +284,7 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 		return nil, err
 	}
 	if order == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "订单不存在")
+		return nil, errcode.ErrOrderNotFound
 	}
 
 	var subOrders []*entity.SubOrders
@@ -345,13 +343,13 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		return nil, err
 	}
 	if order == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "订单不存在")
+		return nil, errcode.ErrOrderNotFound
 	}
 
 	// 校验状态流转
 	allowed, ok := validTransitions[order.Status]
 	if !ok {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed, "当前状态不允许变更")
+		return nil, errcode.ErrInvalidOrderStatus
 	}
 	valid := false
 	for _, s := range allowed {
@@ -361,8 +359,7 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		}
 	}
 	if !valid {
-		return nil, gerror.NewCode(gcode.CodeValidationFailed,
-			fmt.Sprintf("状态不允许从 %s 变更为 %s", order.Status, req.Status))
+		return nil, errcode.Newf(errcode.CodeInvalidOrderStatus, "状态不允许从 %s 变更为 %s", order.Status, req.Status)
 	}
 
 	// 在事务中更新状态

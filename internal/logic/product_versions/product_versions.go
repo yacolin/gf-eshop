@@ -3,11 +3,9 @@ package productVersions
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/product_versions/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
 )
@@ -64,7 +62,7 @@ func (s *sProductVersions) Detail(ctx context.Context, req *v1.ProductVersionsDe
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "版本记录不存在")
+		return nil, errcode.ErrNotFound
 	}
 	return &v1.ProductVersionsDetailRes{ProductVersions: entity}, nil
 }

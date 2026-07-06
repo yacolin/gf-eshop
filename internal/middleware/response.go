@@ -7,7 +7,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 
@@ -79,11 +78,11 @@ func ErrorHandler(r *ghttp.Request) {
 
 var errorStatusMap = map[int]int{
 	// GoFrame 内置码
-	gcode.CodeNotFound.Code():       404,
-	gcode.CodeNotAuthorized.Code():  401,
-	gcode.CodeValidationFailed.Code(): 422,
-	gcode.CodeInvalidParameter.Code(): 400,
-	gcode.CodeOperationFailed.Code(): 500,
+	50: 404, // CodeNotFound
+	54: 401, // CodeNotAuthorized
+	51: 422, // CodeValidationFailed
+	53: 400, // CodeInvalidParameter
+	57: 500, // CodeOperationFailed
 	// 自定义业务码
 	1004: 401, // ErrUnauthorized
 	1016: 401, // ErrInvalidToken

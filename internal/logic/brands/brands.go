@@ -3,12 +3,12 @@ package brands
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 
 	"gf-eshop/api/brands/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -40,7 +40,7 @@ func (s *sBrands) List(ctx context.Context, req *v1.BrandsListReq) (res *v1.Bran
 		}
 		// 缓存不完整，单次重建
 		if ctx.Err() != nil {
-			return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+			return nil, gerror.NewCode(errcode.Code(57), "请求已取消")
 		}
 		ensureBrandCache(ctx)
 		// 重建后重试一次
@@ -114,7 +114,7 @@ func (s *sBrands) Detail(ctx context.Context, req *v1.BrandsDetailReq) (res *v1.
 		return &v1.BrandsDetailRes{Brands: cached}, nil
 	}
 	if ctx.Err() != nil {
-		return nil, gerror.NewCode(gcode.CodeOperationFailed, "请求已取消")
+		return nil, gerror.NewCode(errcode.Code(57), "请求已取消")
 	}
 
 	var entity *entity.Brands
@@ -123,7 +123,7 @@ func (s *sBrands) Detail(ctx context.Context, req *v1.BrandsDetailReq) (res *v1.
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "品牌不存在")
+		return nil, errcode.ErrBrandNotFound
 	}
 	if err := setBrandEntityCache(context.Background(), entity); err != nil {
 		g.Log().Warning(ctx, "setBrandEntityCache failed: %v", err)
@@ -155,7 +155,7 @@ func (s *sBrands) Update(ctx context.Context, req *v1.BrandsUpdateReq) (res *v1.
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "品牌不存在")
+		return nil, errcode.ErrBrandNotFound
 	}
 
 	_, err = dao.Brands.Ctx(ctx).Data(do.Brands{

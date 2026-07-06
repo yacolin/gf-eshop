@@ -3,11 +3,9 @@ package attributes
 import (
 	"context"
 
-	"github.com/gogf/gf/v2/errors/gcode"
-	"github.com/gogf/gf/v2/errors/gerror"
-
 	"gf-eshop/api/attributes/v1"
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
@@ -71,7 +69,7 @@ func (s *sAttributes) Detail(ctx context.Context, req *v1.AttributesDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "属性不存在")
+		return nil, errcode.ErrAttributeNotFound
 	}
 	return &v1.AttributesDetailRes{Attributes: entity}, nil
 }
@@ -102,7 +100,7 @@ func (s *sAttributes) Update(ctx context.Context, req *v1.AttributesUpdateReq) (
 		return nil, err
 	}
 	if count == 0 {
-		return nil, gerror.NewCode(gcode.CodeNotFound, "属性不存在")
+		return nil, errcode.ErrAttributeNotFound
 	}
 
 	_, err = dao.Attributes.Ctx(ctx).Data(do.Attributes{
