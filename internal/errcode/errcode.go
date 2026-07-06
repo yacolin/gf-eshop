@@ -54,6 +54,10 @@ const (
 	CodeCannotModifySystemRole  = 2003
 	CodeCannotDeleteSystemRole  = 2004
 	CodeRoleNotFound            = 2005
+	CodeAddressNotFound    = 1012
+	CodeAddressLimit       = 1013
+	CodeUsernameExists     = 1014
+
 	CodeBrandNotFound       = 4001
 	CodeCategoryNotFound    = 4010
 	CodeAttributeNotFound   = 4020
@@ -79,9 +83,12 @@ const (
 // ============================================================================
 
 var (
-	ErrInvalidParams       = New(CodeInvalidParams, "参数错误")
-	ErrUnauthorized        = New(CodeUnauthorized, "未授权，请先登录")
-	ErrUserNotFound        = New(CodeUserNotFound, "用户不存在")
+	ErrInvalidParams        = New(CodeInvalidParams, "参数错误")
+	ErrUnauthorized         = New(CodeUnauthorized, "未授权，请先登录")
+	ErrUserNotFound         = New(CodeUserNotFound, "用户不存在")
+	ErrAddressNotFound      = New(CodeAddressNotFound, "地址不存在")
+	ErrAddressLimit         = New(CodeAddressLimit, "地址数量已达上限")
+	ErrUsernameAlreadyExists = New(CodeUsernameExists, "用户名已存在")
 	ErrOrderNotFound       = New(CodeOrderNotFound, "订单不存在")
 	ErrPaymentFailed       = New(CodePaymentFailed, "支付失败")
 	ErrInvalidCredentials  = New(CodeInvalidCredentials, "用户名或密码错误")

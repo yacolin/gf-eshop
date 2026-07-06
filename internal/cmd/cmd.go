@@ -33,6 +33,9 @@ import (
 	categoriesLogic "gf-eshop/internal/logic/categories"
 	productsLogic "gf-eshop/internal/logic/products"
 	_ "gf-eshop/internal/logic/dashboard"
+	"gf-eshop/internal/controller/address"
+	"gf-eshop/internal/controller/user"
+	"gf-eshop/internal/controller/user_auth"
 	"gf-eshop/internal/middleware"
 	ordersCtrl "gf-eshop/internal/controller/orders"
 	paymentsCtrl "gf-eshop/internal/controller/payments"
@@ -131,6 +134,24 @@ var (
 					ordersCtrl.NewV1(),
 					paymentsCtrl.NewV1(),
 					cartsCtrl.NewV1(),
+				)
+			})
+			group.Group("/user/auth", func(group *ghttp.RouterGroup) {
+				group.Middleware(middleware.UserAuthMiddleware)
+				group.Bind(
+					user_auth.NewV1(),
+				)
+			})
+			group.Group("/user", func(group *ghttp.RouterGroup) {
+				group.Middleware(middleware.UserAuthMiddleware)
+				group.Bind(
+					user.NewV1(),
+				)
+			})
+			group.Group("/", func(group *ghttp.RouterGroup) {
+				group.Middleware(middleware.UserAuthMiddleware)
+				group.Bind(
+					address.NewV1(),
 				)
 			})
 		})
