@@ -3,7 +3,7 @@ package v1
 import "github.com/gogf/gf/v2/frame/g"
 
 type UserLoginReq struct {
-	g.Meta   `path:"/login" tags:"用户认证" method:"post" summary:"用户密码登录"`
+	g.Meta   `path:"/user/auth/login" tags:"用户认证" method:"post" summary:"用户密码登录"`
 	Username string `json:"username" v:"required" description:"用户名"`
 	Password string `json:"password" v:"required" description:"密码"`
 }
@@ -17,7 +17,7 @@ type UserLoginRes struct {
 }
 
 type UserRegisterReq struct {
-	g.Meta   `path:"/register" tags:"用户认证" method:"post" summary:"用户注册"`
+	g.Meta   `path:"/user/auth/register" tags:"用户认证" method:"post" summary:"用户注册"`
 	Username string `json:"username" v:"required" description:"用户名"`
 	Password string `json:"password" v:"required" description:"密码"`
 	Email    string `json:"email"    description:"邮箱"`
@@ -33,7 +33,7 @@ type UserRegisterRes struct {
 }
 
 type UserRefreshTokenReq struct {
-	g.Meta       `path:"/refresh" tags:"用户认证" method:"post" summary:"刷新令牌"`
+	g.Meta       `path:"/user/auth/refresh" tags:"用户认证" method:"post" summary:"刷新令牌"`
 	RefreshToken string `json:"refresh_token" v:"required" description:"刷新令牌"`
 }
 type UserRefreshTokenRes struct {

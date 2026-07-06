@@ -7,7 +7,7 @@ import (
 )
 
 type UserProfileReq struct {
-	g.Meta `path:"/profile" tags:"用户" method:"get" summary:"获取当前用户资料"`
+	g.Meta `path:"/user" tags:"用户" method:"get" summary:"获取当前用户资料"`
 }
 type UserProfileRes struct {
 	*entity.Users
@@ -15,7 +15,7 @@ type UserProfileRes struct {
 }
 
 type UserUpdateInfoReq struct {
-	g.Meta   `path:"/info" tags:"用户" method:"put" summary:"更新个人信息"`
+	g.Meta   `path:"/user" tags:"用户" method:"put" summary:"更新个人信息"`
 	Nickname string `json:"nickname"`
 	Avatar   string `json:"avatar"`
 	Gender   int    `json:"gender"`

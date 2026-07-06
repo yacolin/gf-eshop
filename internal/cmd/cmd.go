@@ -136,21 +136,11 @@ var (
 					cartsCtrl.NewV1(),
 				)
 			})
-			group.Group("/user/auth", func(group *ghttp.RouterGroup) {
-				group.Middleware(middleware.UserAuthMiddleware)
-				group.Bind(
-					user_auth.NewV1(),
-				)
-			})
-			group.Group("/user", func(group *ghttp.RouterGroup) {
-				group.Middleware(middleware.UserAuthMiddleware)
-				group.Bind(
-					user.NewV1(),
-				)
-			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(middleware.UserAuthMiddleware)
 				group.Bind(
+					user.NewV1(),
+					user_auth.NewV1(),
 					address.NewV1(),
 				)
 			})
