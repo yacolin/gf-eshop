@@ -252,3 +252,64 @@ func (s *sPayments) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) 
 	}
 	return &v1.RefundsCreateRes{Refunds: refund}, nil
 }
+
+func (s *sPayments) ListRefund(ctx context.Context, req *v1.RefundsListReq) (res *v1.RefundsListRes, err error) {
+	page := req.Page
+	size := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+
+	m := dao.Refunds.Ctx(ctx)
+	if req.PaymentNo != "" {
+		m = m.Where(dao.Refunds.Columns().PaymentNo, req.PaymentNo)
+	}
+	if req.OrderNo != "" {
+		m = m.Where(dao.Refunds.Columns().OrderNo, req.OrderNo)
+	}
+	if req.RefundNo != "" {
+		m = m.Where(dao.Refunds.Columns().RefundNo, req.RefundNo)
+	}
+	if req.Status != "" {
+		m = m.Where(dao.Refunds.Columns().Status, req.Status)
+	}
+
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return &v1.RefundsListRes{
+			List:  make([]*entity.Refunds, 0),
+			Total: 0,
+		}, nil
+	}
+
+	var list []*entity.Refunds
+	err = m.Page(page, size).OrderDesc(dao.Refunds.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.RefundsListRes{
+		List:  list,
+		Total: int(total),
+	}, nil
+}
+
+func (s *sPayments) DetailRefund(ctx context.Context, req *v1.RefundsDetailReq) (res *v1.RefundsDetailRes, err error) {
+	var refund *entity.Refunds
+	err = dao.Refunds.Ctx(ctx).Where(dao.Refunds.Columns().RefundNo, req.RefundNo).Scan(&refund)
+	if err != nil {
+		return nil, err
+	}
+	if refund == nil {
+		return nil, gerror.NewCode(gcode.CodeNotFound, "退款记录不存在")
+	}
+	return &v1.RefundsDetailRes{Refunds: refund}, nil
+}

@@ -51,3 +51,27 @@ type RefundsCreateReq struct {
 type RefundsCreateRes struct {
 	*entity.Refunds
 }
+
+type RefundsListReq struct {
+	g.Meta        `path:"/payments/refunds" tags:"Refunds" method:"get" summary:"退款列表"`
+	Page          int    `json:"page"        description:"页码"`
+	PageSize      int    `json:"page_size"   description:"每页条数"`
+	PaymentNo     string `json:"payment_no"  description:"支付单号"`
+	OrderNo       string `json:"order_no"    description:"订单号"`
+	RefundNo      string `json:"refund_no"   description:"退款单号"`
+	Status        string `json:"status"      description:"退款状态"`
+}
+
+type RefundsListRes struct {
+	List  []*entity.Refunds `json:"list"`
+	Total int               `json:"total"`
+}
+
+type RefundsDetailReq struct {
+	g.Meta   `path:"/payments/refunds/{refund_no}" tags:"Refunds" method:"get" summary:"退款详情"`
+	RefundNo string `json:"refund_no"`
+}
+
+type RefundsDetailRes struct {
+	*entity.Refunds
+}

@@ -22,3 +22,11 @@ func (c *ControllerV1) GetPayment(ctx context.Context, req *v1.PaymentsGetReq) (
 func (c *ControllerV1) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) (res *v1.RefundsCreateRes, err error) {
 	return service.Payments().CreateRefund(ctx, req)
 }
+
+func (c *ControllerV1) ListRefund(ctx context.Context, req *v1.RefundsListReq) (res *v1.RefundsListRes, err error) {
+	return service.Payments().ListRefund(ctx, req)
+}
+
+func (c *ControllerV1) DetailRefund(ctx context.Context, req *v1.RefundsDetailReq) (res *v1.RefundsDetailRes, err error) {
+	return service.Payments().DetailRefund(ctx, req)
+}
