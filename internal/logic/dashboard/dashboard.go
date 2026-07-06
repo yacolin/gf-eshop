@@ -7,6 +7,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/gtime"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
@@ -88,6 +89,13 @@ func (s *sDashboard) refreshCache(ctx context.Context) error {
 	}
 	_, err = g.Redis().Do(ctx, "SETEX", dashboardCacheKey, int(dashboardCacheTTL.Seconds()), string(data))
 	return err
+}
+
+func (s *sDashboard) InvalidateCache(ctx context.Context) {
+	_, err := g.Redis().Do(ctx, "DEL", dashboardCacheKey)
+	if err != nil {
+		g.Log().Warningf(ctx, "dashboard invalidate cache failed: %v", err)
+	}
 }
 
 // rebuildStats 并行执行 7 个统计查询，出错时日志记录不阻断
@@ -181,19 +189,147 @@ func (s *sDashboard) computeSummary(ctx context.Context) (v1.SummaryDTO, error) 
 	}
 	summary.LowStockCount = int64(n)
 
+	// 订单总数
+	n, err = dao.Orders.Ctx(ctx).Count()
+	if err != nil {
+		return summary, fmt.Errorf("count orders: %w", err)
+	}
+	summary.TotalOrders = int64(n)
+
+	// 营收总额（已支付订单的 pay_amount 总和）
+	var revenue struct {
+		Value int64 `orm:"value"`
+	}
+	err = g.DB().Model("tx_orders").
+		Fields("COALESCE(SUM(pay_amount), 0) AS value").
+		Where("payment_status", "paid").
+		Where("deleted_at IS NULL").
+		Scan(&revenue)
+	if err != nil {
+		return summary, fmt.Errorf("sum revenue: %w", err)
+	}
+	summary.TotalRevenue = revenue.Value
+
 	return summary, nil
 }
 
 func (s *sDashboard) computeOrderTrend(ctx context.Context) []v1.OrderTrendDTO {
-	return make([]v1.OrderTrendDTO, 0)
+	type trendRow struct {
+		Date   string `orm:"date"`
+		Count  int64  `orm:"count"`
+		Amount int64  `orm:"amount"`
+	}
+	var rows []trendRow
+	sevenDaysAgo := gtime.Now().AddDate(0, 0, -6).Format("Y-m-d") + " 00:00:00"
+	err := g.DB().Model("tx_orders").
+		Fields("DATE_FORMAT(created_at, '%m-%d') AS date", "COUNT(*) AS count", "COALESCE(SUM(pay_amount), 0) AS amount").
+		Where("created_at >= ?", sevenDaysAgo).
+		Where("deleted_at IS NULL").
+		Group("date").
+		Order("date ASC").
+		Scan(&rows)
+	if err != nil {
+		g.Log().Warningf(ctx, "query order trend: %v", err)
+		return make([]v1.OrderTrendDTO, 0)
+	}
+
+	trendMap := make(map[string]v1.OrderTrendDTO, len(rows))
+	for _, r := range rows {
+		trendMap[r.Date] = v1.OrderTrendDTO{
+			Date:   r.Date,
+			Count:  r.Count,
+			Amount: r.Amount,
+		}
+	}
+
+	result := make([]v1.OrderTrendDTO, 0, 7)
+	now := gtime.Now()
+	for i := 6; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i).Format("m-d")
+		if t, ok := trendMap[date]; ok {
+			result = append(result, t)
+		} else {
+			result = append(result, v1.OrderTrendDTO{Date: date, Count: 0, Amount: 0})
+		}
+	}
+	return result
 }
 
 func (s *sDashboard) computeOrderStatusDist(ctx context.Context) []v1.StatusDistDTO {
-	return make([]v1.StatusDistDTO, 0)
+	type statusRow struct {
+		Status string `orm:"status"`
+		Value  int64  `orm:"value"`
+	}
+	var rows []statusRow
+	err := dao.Orders.Ctx(ctx).
+		Fields(dao.Orders.Columns().Status, "COUNT(*) AS value").
+		Group(dao.Orders.Columns().Status).
+		Scan(&rows)
+	if err != nil {
+		g.Log().Warningf(ctx, "query order status dist: %v", err)
+		return make([]v1.StatusDistDTO, 0)
+	}
+
+	labelMap := map[string]string{
+		"pending":   "待付款",
+		"paid":      "已付款",
+		"shipped":   "已发货",
+		"delivered": "已送达",
+		"cancelled": "已取消",
+		"refunded":  "已退款",
+	}
+	result := make([]v1.StatusDistDTO, 0, len(rows))
+	for _, r := range rows {
+		label := labelMap[r.Status]
+		if label == "" {
+			label = r.Status
+		}
+		result = append(result, v1.StatusDistDTO{
+			Status: r.Status,
+			Label:  label,
+			Value:  r.Value,
+		})
+	}
+	return result
 }
 
 func (s *sDashboard) computePaymentMethodDist(ctx context.Context) []v1.MethodDistDTO {
-	return make([]v1.MethodDistDTO, 0)
+	type methodRow struct {
+		Method string `orm:"method"`
+		Value  int64  `orm:"value"`
+	}
+	var rows []methodRow
+	err := g.DB().Model("tx_payments").
+		Fields("payment_method AS method", "COUNT(*) AS value").
+		WhereIn("status", g.Slice{"success", "paid"}).
+		Where("deleted_at IS NULL").
+		Group("method").
+		Scan(&rows)
+	if err != nil {
+		g.Log().Warningf(ctx, "query payment method dist: %v", err)
+		return make([]v1.MethodDistDTO, 0)
+	}
+
+	labelMap := map[string]string{
+		"alipay": "支付宝",
+		"wechat": "微信支付",
+		"wallet": "余额",
+		"bank":   "银行卡",
+		"cash":   "现金",
+	}
+	result := make([]v1.MethodDistDTO, 0, len(rows))
+	for _, r := range rows {
+		label := labelMap[r.Method]
+		if label == "" {
+			label = r.Method
+		}
+		result = append(result, v1.MethodDistDTO{
+			Method: r.Method,
+			Label:  label,
+			Value:  r.Value,
+		})
+	}
+	return result
 }
 
 func (s *sDashboard) computeCategoryDist(ctx context.Context) ([]v1.CategoryDistDTO, error) {
@@ -251,5 +387,59 @@ func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) ([]v1.Statu
 }
 
 func (s *sDashboard) computeTopProducts(ctx context.Context) []v1.TopProductDTO {
-	return make([]v1.TopProductDTO, 0)
+	type topRow struct {
+		ProductId int64 `orm:"product_id"`
+		Count     int64 `orm:"count"`
+		Amount    int64 `orm:"amount"`
+	}
+	var rows []topRow
+	err := g.DB().Model("tx_order_items").
+		Fields("product_id", "COUNT(*) AS count", "COALESCE(SUM(subtotal), 0) AS amount").
+		Where("deleted_at IS NULL").
+		Group("product_id").
+		Order("count DESC, amount DESC").
+		Limit(10).
+		Scan(&rows)
+	if err != nil {
+		g.Log().Warningf(ctx, "query top products: %v", err)
+		return make([]v1.TopProductDTO, 0)
+	}
+	if len(rows) == 0 {
+		return make([]v1.TopProductDTO, 0)
+	}
+
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ProductId
+	}
+	type nameRow struct {
+		Id   int64  `orm:"id"`
+		Name string `orm:"name"`
+	}
+	var names []nameRow
+	err = dao.Products.Ctx(ctx).
+		Fields(dao.Products.Columns().Id, dao.Products.Columns().Name).
+		WhereIn(dao.Products.Columns().Id, ids).
+		Scan(&names)
+	if err != nil {
+		g.Log().Warningf(ctx, "query product names: %v", err)
+	}
+	nameMap := make(map[int64]string, len(names))
+	for _, n := range names {
+		nameMap[n.Id] = n.Name
+	}
+
+	result := make([]v1.TopProductDTO, len(rows))
+	for i, r := range rows {
+		name := nameMap[r.ProductId]
+		if name == "" {
+			name = fmt.Sprintf("已删除(ID:%d)", r.ProductId)
+		}
+		result[i] = v1.TopProductDTO{
+			Name:   name,
+			Count:  r.Count,
+			Amount: r.Amount,
+		}
+	}
+	return result
 }

@@ -9,6 +9,7 @@ import (
 type IDashboard interface {
 	Stats(ctx context.Context, req *v1.DashboardStatsReq) (res *v1.DashboardStatsRes, err error)
 	StartPeriodicRefresh(ctx context.Context)
+	InvalidateCache(ctx context.Context)
 }
 
 var localDashboard IDashboard
