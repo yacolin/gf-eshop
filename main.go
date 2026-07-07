@@ -31,6 +31,8 @@ import (
 	_ "gf-eshop/internal/logic/address"
 	_ "gf-eshop/internal/logic/marketing"
 	_ "gf-eshop/internal/logic/user_levels"
+	_ "gf-eshop/internal/logic/user_points"
+	_ "gf-eshop/internal/logic/points_rules"
 )
 
 func main() {

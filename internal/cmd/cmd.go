@@ -39,6 +39,9 @@ import (
 	"gf-eshop/internal/controller/user"
 	"gf-eshop/internal/controller/user_admin"
 	"gf-eshop/internal/controller/user_levels"
+	"gf-eshop/internal/controller/user_points"
+	pointsRulesCtrl "gf-eshop/internal/controller/points_rules"
+
 	"gf-eshop/internal/controller/user_auth"
 	"gf-eshop/internal/middleware"
 	ordersCtrl "gf-eshop/internal/controller/orders"
@@ -115,12 +118,14 @@ var (
 					wsCtrl.NewV1(),
 					user_admin.NewV1(),
 					user_levels.NewV1(),
+					user_points.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(authMiddleware, middleware.RequireAdmin)
 				group.Bind(
 					roles.NewV1(),
+						pointsRulesCtrl.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {
