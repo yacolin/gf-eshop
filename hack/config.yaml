@@ -22,6 +22,22 @@ gfcli:
         descriptionTag: true
         noModelComment: true
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "sys_login_histories"
+        removePrefix: "sys_"
+        prefix: "Sys_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "usr_login_histories"
+        removePrefix: "usr_"
+        prefix: "Usr_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
         tables: "base_notifications,base_notification_templates,base_notification_reads"
         removePrefix: "base_"
         jsonCase: "Snake"
@@ -36,7 +52,7 @@ gfcli:
         descriptionTag: true
         noModelComment: true
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "usr_users,usr_infos,usr_addresses,usr_login_histories"
+        tables: "usr_users,usr_infos,usr_addresses"
         removePrefix: "usr_"
         jsonCase: "Snake"
         jsonOmitEmpty: true

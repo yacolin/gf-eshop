@@ -74,11 +74,28 @@ func (s *sStaff) Login(ctx context.Context, req *v1.StaffLoginReq) (res *v1.Staf
 		return nil, gerror.NewCode(errcode.Code(57), "生成Token失败")
 	}
 
-	ip := g.RequestFromCtx(ctx).GetClientIp()
+	ip := ""
+	device := ""
+	if r := g.RequestFromCtx(ctx); r != nil {
+		ip = r.GetClientIp()
+		device = r.Header.Get("User-Agent")
+		if len(device) > 100 {
+			device = device[:100]
+		}
+	}
 	_, _ = dao.Staff.Ctx(ctx).Where(dao.Staff.Columns().Id, staff.Id).Update(do.Staff{
 		LastLoginIp: ip,
 		LastLoginAt: gtime.New(now),
 	})
+	if _, err := dao.SysLoginHistories.Ctx(ctx).Insert(do.SysLoginHistories{
+		StaffId:     staff.Id,
+		LoginIp:     ip,
+		LoginDevice: device,
+		LoginMethod: "password",
+		LoginStatus: 1,
+	}); err != nil {
+		g.Log().Warning(ctx, "insert login history failed: %v", err)
+	}
 
 	refreshClaims, _ := utility.ParseStaffToken(ctx, pair.RefreshToken)
 	if refreshClaims != nil {

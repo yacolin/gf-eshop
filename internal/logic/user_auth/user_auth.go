@@ -62,13 +62,27 @@ func (s *sUserAuth) Login(ctx context.Context, req *v1.UserLoginReq) (res *v1.Us
 	}
 
 	ip := ""
+	device := ""
 	if r := g.RequestFromCtx(ctx); r != nil {
 		ip = r.GetClientIp()
+		device = r.Header.Get("User-Agent")
+		if len(device) > 100 {
+			device = device[:100]
+		}
 	}
 	_, _ = dao.Users.Ctx(ctx).Where(dao.Users.Columns().Id, user.Id).Update(do.Users{
 		LastLoginIp: ip,
 		LastLoginAt: gtime.New(now),
 	})
+	if _, err := dao.UsrLoginHistories.Ctx(ctx).Insert(do.UsrLoginHistories{
+		UserId:      user.Id,
+		LoginIp:     ip,
+		LoginDevice: device,
+		LoginMethod: "password",
+		LoginStatus: 1,
+	}); err != nil {
+		g.Log().Warning(ctx, "insert login history failed: %v", err)
+	}
 
 	refreshClaims, _ := utility.ParseUserToken(ctx, pair.RefreshToken)
 	if refreshClaims != nil {
