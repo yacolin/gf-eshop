@@ -52,7 +52,7 @@ gfcli:
         descriptionTag: true
         noModelComment: true
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "usr_users,usr_infos,usr_addresses"
+        tables: "usr_users,usr_infos,usr_addresses,usr_levels"
         removePrefix: "usr_"
         jsonCase: "Snake"
         jsonOmitEmpty: true
