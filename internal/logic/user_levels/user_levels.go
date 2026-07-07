@@ -2,6 +2,7 @@ package user_levels
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
@@ -73,6 +74,7 @@ func (s *sUserLevels) Detail(ctx context.Context, req *v1.LevelsDetailReq) (res 
 func (s *sUserLevels) Create(ctx context.Context, req *v1.LevelsCreateReq) (res *v1.LevelsCreateRes, err error) {
 	result, err := dao.Levels.Ctx(ctx).Insert(do.Levels{
 		Name:             req.Name,
+		Icon:             req.Icon,
 		Level:            req.Level,
 		MinPoints:        req.MinPoints,
 		MaxPoints:        req.MaxPoints,
@@ -102,6 +104,7 @@ func (s *sUserLevels) Update(ctx context.Context, req *v1.LevelsUpdateReq) (res 
 
 	data := do.Levels{
 		Name:             req.Name,
+		Icon:             req.Icon,
 		Level:            req.Level,
 		MinPoints:        req.MinPoints,
 		MaxPoints:        req.MaxPoints,
@@ -133,4 +136,83 @@ func (s *sUserLevels) Delete(ctx context.Context, req *v1.LevelsDeleteReq) (res 
 		return nil, err
 	}
 	return &v1.LevelsDeleteRes{}, nil
+}
+
+
+func (s *sUserLevels) UserLevel(ctx context.Context, req *v1.UserLevelReq) (res *v1.UserLevelRes, err error) {
+	// 查询用户当前积分余额
+	var latest entity.Points
+	err = dao.Points.Ctx(ctx).
+		Where(dao.Points.Columns().UserId, req.UserId).
+		Where(dao.Points.Columns().Status, 1).
+		OrderDesc(dao.Points.Columns().Id).
+		Limit(1).
+		Scan(&latest)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	currentPoints := latest.BalanceAfter
+
+	// 查询所有启用的等级
+	var levels []*entity.Levels
+	err = dao.Levels.Ctx(ctx).
+		Where(dao.Levels.Columns().Status, 1).
+		OrderAsc(dao.Levels.Columns().SortOrder).
+		OrderAsc(dao.Levels.Columns().Level).
+		Scan(&levels)
+	if err != nil {
+		return nil, err
+	}
+	if len(levels) == 0 {
+		return nil, gerror.NewCode(gcode.CodeNotFound, "未配置等级")
+	}
+
+	// 找到用户的当前等级和下一等级
+	var currentLevel *entity.Levels
+	var nextLevel *entity.Levels
+	for i, l := range levels {
+		if currentPoints >= l.MinPoints && (l.MaxPoints == 0 || currentPoints <= l.MaxPoints) {
+			currentLevel = l
+			if i+1 < len(levels) {
+				nextLevel = levels[i+1]
+			}
+			break
+		}
+	}
+
+	// 如果没找到匹配等级，给最低等级
+	if currentLevel == nil {
+		currentLevel = levels[0]
+		if len(levels) > 1 {
+			nextLevel = levels[1]
+		}
+	}
+
+	// 计算进度百分比
+	progressPercent := 100.0
+	pointsToNext := int64(0)
+	if nextLevel != nil {
+		range_ := nextLevel.MinPoints - currentLevel.MinPoints
+		if range_ > 0 {
+			progress := currentPoints - currentLevel.MinPoints
+			progressPercent = float64(progress) / float64(range_) * 100
+			if progressPercent > 100 {
+				progressPercent = 100
+			}
+			pointsToNext = nextLevel.MinPoints - currentPoints
+			if pointsToNext < 0 {
+				pointsToNext = 0
+			}
+		}
+	}
+
+	return &v1.UserLevelRes{
+		UserLevelInfo: &v1.UserLevelInfo{
+			Levels:          *currentLevel,
+			ProgressPercent: progressPercent,
+			CurrentPoints:   currentPoints,
+			NextLevel:       nextLevel,
+			PointsToNext:    pointsToNext,
+		},
+	}, nil
 }

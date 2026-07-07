@@ -12,6 +12,7 @@ import (
 type Levels struct {
 	Id               int64       `json:"id"                description:"等级ID"`
 	Name             string      `json:"name"              description:"等级名称（如：青铜会员、白银会员、黄金会员、钻石会员）"`
+	Icon             string      `json:"icon"              description:"等级图标URL"`
 	Level            int         `json:"level"             description:"等级数值（1=青铜 2=白银 3=黄金 4=钻石）"`
 	MinPoints        int64       `json:"min_points"        description:"该等级所需最低累计积分"`
 	MaxPoints        int64       `json:"max_points"        description:"该等级所需最高累计积分（0表示无上限）"`

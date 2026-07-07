@@ -26,3 +26,7 @@ func (c *ControllerV1) Update(ctx context.Context, req *v1.LevelsUpdateReq) (res
 func (c *ControllerV1) Delete(ctx context.Context, req *v1.LevelsDeleteReq) (res *v1.LevelsDeleteRes, err error) {
 	return service.UserLevels().Delete(ctx, req)
 }
+
+func (c *ControllerV1) UserLevel(ctx context.Context, req *v1.UserLevelReq) (res *v1.UserLevelRes, err error) {
+	return service.UserLevels().UserLevel(ctx, req)
+}

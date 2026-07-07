@@ -41,6 +41,7 @@ import (
 	"gf-eshop/internal/controller/user_levels"
 	"gf-eshop/internal/controller/user_points"
 	pointsRulesCtrl "gf-eshop/internal/controller/points_rules"
+	levelRulesCtrl "gf-eshop/internal/controller/level_rules"
 
 	"gf-eshop/internal/controller/user_auth"
 	"gf-eshop/internal/middleware"
@@ -126,6 +127,7 @@ var (
 				group.Bind(
 					roles.NewV1(),
 						pointsRulesCtrl.NewV1(),
+						levelRulesCtrl.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {

@@ -33,6 +33,7 @@ import (
 	_ "gf-eshop/internal/logic/user_levels"
 	_ "gf-eshop/internal/logic/user_points"
 	_ "gf-eshop/internal/logic/points_rules"
+	_ "gf-eshop/internal/logic/level_rules"
 )
 
 func main() {

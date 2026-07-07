@@ -11,4 +11,5 @@ type IUserLevelsV1 interface {
 	Create(ctx context.Context, req *v1.LevelsCreateReq) (res *v1.LevelsCreateRes, err error)
 	Update(ctx context.Context, req *v1.LevelsUpdateReq) (res *v1.LevelsUpdateRes, err error)
 	Delete(ctx context.Context, req *v1.LevelsDeleteReq) (res *v1.LevelsDeleteRes, err error)
+	UserLevel(ctx context.Context, req *v1.UserLevelReq) (res *v1.UserLevelRes, err error)
 }

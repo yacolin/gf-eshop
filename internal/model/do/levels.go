@@ -14,6 +14,7 @@ type Levels struct {
 	g.Meta           `orm:"table:usr_levels, do:true"`
 	Id               interface{} // 等级ID
 	Name             interface{} // 等级名称（如：青铜会员、白银会员、黄金会员、钻石会员）
+	Icon             interface{} // 等级图标URL
 	Level            interface{} // 等级数值（1=青铜 2=白银 3=黄金 4=钻石）
 	MinPoints        interface{} // 该等级所需最低累计积分
 	MaxPoints        interface{} // 该等级所需最高累计积分（0表示无上限）
