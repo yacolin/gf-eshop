@@ -11,4 +11,6 @@ type IStaffV1 interface {
 	Logout(ctx context.Context, req *v1.StaffLogoutReq) (res *v1.StaffLogoutRes, err error)
 	Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.StaffProfileRes, err error)
 	Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (res *v1.StaffPermissionsRes, err error)
+	List(ctx context.Context, req *v1.StaffListReq) (res *v1.StaffListRes, err error)
+	AssignRoles(ctx context.Context, req *v1.StaffAssignRolesReq) (res *v1.StaffAssignRolesRes, err error)
 }

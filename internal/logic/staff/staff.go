@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
@@ -209,6 +210,123 @@ func (s *sStaff) Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (
 		Roles:       roles,
 		Permissions: perms,
 	}, nil
+}
+
+func (s *sStaff) List(ctx context.Context, req *v1.StaffListReq) (res *v1.StaffListRes, err error) {
+	var (
+		page = req.Page
+		size = req.PageSize
+		m    = dao.Staff.Ctx(ctx)
+	)
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	if req.Keyword != "" {
+		m = m.WhereOrLike(dao.Staff.Columns().Username, "%"+req.Keyword+"%").
+			WhereOrLike(dao.Staff.Columns().RealName, "%"+req.Keyword+"%")
+	}
+	if req.Status > 0 {
+		m = m.Where(dao.Staff.Columns().Status, req.Status)
+	}
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return &v1.StaffListRes{
+			List:  make([]*v1.StaffListItem, 0),
+			Total: 0,
+		}, nil
+	}
+	var staffList []*entity.Staff
+	err = m.Page(page, size).OrderDesc(dao.Staff.Columns().Id).Scan(&staffList)
+	if err != nil {
+		return nil, err
+	}
+
+	staffIds := make([]int64, 0, len(staffList))
+	for _, s := range staffList {
+		staffIds = append(staffIds, s.Id)
+	}
+
+	type StaffRole struct {
+		StaffId  int64
+		RoleId   int64
+		RoleName string
+	}
+	var staffRoles []StaffRole
+	err = dao.StaffRoles.Ctx(ctx).
+		InnerJoin("sys_roles", "sys_roles.id = sys_staff_roles.role_id").
+		WhereIn("sys_staff_roles.staff_id", staffIds).
+		Fields("sys_staff_roles.staff_id", "sys_staff_roles.role_id", "sys_roles.name AS role_name").
+		Scan(&staffRoles)
+	if err != nil {
+		return nil, err
+	}
+
+	roleMap := make(map[int64]*v1.StaffListItem)
+	for _, s := range staffList {
+		roleMap[s.Id] = &v1.StaffListItem{
+			Id:          s.Id,
+			Username:    s.Username,
+			RealName:    s.RealName,
+			Email:       s.Email,
+			Phone:       s.Phone,
+			Avatar:      s.Avatar,
+			Status:      s.Status,
+			LastLoginIp: s.LastLoginIp,
+			LastLoginAt: s.LastLoginAt,
+			CreatedAt:   s.CreatedAt,
+			RoleIds:     make([]int64, 0),
+			RoleNames:   make([]string, 0),
+		}
+	}
+	for _, sr := range staffRoles {
+		if item, ok := roleMap[sr.StaffId]; ok {
+			item.RoleIds = append(item.RoleIds, sr.RoleId)
+			item.RoleNames = append(item.RoleNames, sr.RoleName)
+		}
+	}
+
+	list := make([]*v1.StaffListItem, 0, len(staffList))
+	for _, s := range staffList {
+		list = append(list, roleMap[s.Id])
+	}
+	return &v1.StaffListRes{List: list, Total: total}, nil
+}
+
+func (s *sStaff) AssignRoles(ctx context.Context, req *v1.StaffAssignRolesReq) (res *v1.StaffAssignRolesRes, err error) {
+	count, err := dao.Staff.Ctx(ctx).Where(dao.Staff.Columns().Id, req.Id).Count()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, errcode.ErrUserNotFound
+	}
+
+	err = dao.StaffRoles.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		_, err := dao.StaffRoles.Ctx(ctx).TX(tx).Where(dao.StaffRoles.Columns().StaffId, req.Id).Delete()
+		if err != nil {
+			return err
+		}
+		for _, roleId := range req.RoleIds {
+			_, err = tx.Model("sys_staff_roles").Insert(do.StaffRoles{
+				StaffId: req.Id,
+				RoleId:  roleId,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &v1.StaffAssignRolesRes{}, nil
 }
 
 
