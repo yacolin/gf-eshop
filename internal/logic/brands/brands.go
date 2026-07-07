@@ -33,7 +33,7 @@ func (s *sBrands) List(ctx context.Context, req *v1.BrandsListReq) (res *v1.Bran
 	}
 
 	// 无筛选条件时走 Lua 脚本（一次 Redis 往返完成 ZCARD+ZRANGE+MGET）
-	if req.Name == "" && req.FirstLetter == "" && req.Status == 0 {
+	if req.Name == "" && req.FirstLetter == "" && (req.Status == nil || *req.Status == 0) {
 		list, total, err := getBrandPage(ctx, page, size)
 		if err == nil && total > 0 {
 			return &v1.BrandsListRes{List: list, Total: total}, nil
@@ -70,8 +70,8 @@ func (s *sBrands) List(ctx context.Context, req *v1.BrandsListReq) (res *v1.Bran
 	if req.FirstLetter != "" {
 		m = m.Where(dao.Brands.Columns().FirstLetter, req.FirstLetter)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Brands.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Brands.Columns().Status, *req.Status)
 	}
 
 	total, err := m.Count()

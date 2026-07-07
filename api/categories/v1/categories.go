@@ -13,7 +13,7 @@ type CategoryListReq struct {
 	Page     int    `json:"page"`      // 页码，默认1
 	PageSize int    `json:"page_size"` // 每页条数，默认20
 	ParentId int    `json:"parent_id"` // 按父级ID筛选
-	Status   int    `json:"status"`    // 按状态筛选
+	Status   *int   `json:"status"`    // 按状态筛选
 	Name     string `json:"name"`      // 按名称模糊搜索
 	Level    int    `json:"level"`     // 按层级筛选
 }
@@ -72,7 +72,7 @@ type CategoryLevelRes struct {
 // ---------- Tree ----------
 type CategoryTreeReq struct {
 	g.Meta `path:"/categories/tree" tags:"Categories" method:"get" summary:"类目树形结构"`
-	Status int `json:"status"`
+	Status *int `json:"status"`
 }
 type CategoryTreeItem struct {
 	*entity.Categories

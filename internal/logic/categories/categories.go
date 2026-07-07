@@ -36,7 +36,7 @@ func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v
 	}
 
 	// 无筛选条件时走 Lua 脚本
-	if req.ParentId <= 0 && req.Status <= 0 && req.Name == "" && req.Level <= 0 {
+	if req.ParentId <= 0 && (req.Status == nil || *req.Status <= 0) && req.Name == "" && req.Level <= 0 {
 		list, total, err := getCategoryPage(ctx, page, size)
 		if err == nil && total > 0 {
 			return &v1.CategoryListRes{List: list, Total: total}, nil
@@ -67,8 +67,8 @@ func (s *sCategories) List(ctx context.Context, req *v1.CategoryListReq) (res *v
 	if req.ParentId > 0 {
 		m = m.Where(dao.Categories.Columns().ParentId, req.ParentId)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Categories.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Categories.Columns().Status, *req.Status)
 	}
 	if req.Name != "" {
 		m = m.Where(dao.Categories.Columns().Name+" LIKE ?", "%"+req.Name+"%")
@@ -215,8 +215,8 @@ func (s *sCategories) Tree(ctx context.Context, req *v1.CategoryTreeReq) (res *v
 		m   = dao.Categories.Ctx(ctx)
 		all []*entity.Categories
 	)
-	if req.Status > 0 {
-		m = m.Where(dao.Categories.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Categories.Columns().Status, *req.Status)
 	}
 	err = m.OrderAsc(dao.Categories.Columns().SortOrder).OrderAsc(dao.Categories.Columns().Id).Scan(&all)
 	if err != nil {

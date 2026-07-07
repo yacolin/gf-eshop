@@ -25,7 +25,7 @@ type PromotionListReq struct {
 	g.Meta    `path:"/promotions" tags:"Marketing" method:"get" summary:"促销列表"`
 	Page      int `json:"page"`       // 页码，默认1
 	PageSize  int `json:"page_size"`  // 每页条数，默认10
-	Status    int `json:"status"`     // 按状态筛选
+	Status    *int `json:"status"`     // 按状态筛选
 	PromoType int `json:"promo_type"` // 按促销类型筛选
 }
 type PromotionListRes struct {

@@ -41,8 +41,8 @@ func (s *sPermissions) List(ctx context.Context, req *v1.PermissionListReq) (res
 	if req.Category != "" {
 		m = m.Where(dao.Permissions.Columns().Category, req.Category)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Permissions.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Permissions.Columns().Status, *req.Status)
 	}
 	total, err := m.Count()
 	if err != nil {

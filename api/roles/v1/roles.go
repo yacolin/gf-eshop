@@ -12,7 +12,7 @@ type RoleListReq struct {
 	PageSize int    `json:"page_size"`
 	Name     string `json:"name"`
 	RoleType string `json:"role_type"`
-	Status   int    `json:"status"`
+	Status   *int   `json:"status"`
 }
 type RoleListRes struct {
 	List  []*entity.Roles `json:"list"`

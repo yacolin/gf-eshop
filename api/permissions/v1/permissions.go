@@ -13,7 +13,7 @@ type PermissionListReq struct {
 	Resource   string `json:"resource"`
 	Action     string `json:"action"`
 	Category   string `json:"category"`
-	Status     int    `json:"status"`
+	Status     *int   `json:"status"`
 }
 type PermissionListRes struct {
 	List  []*entity.Permissions `json:"list"`

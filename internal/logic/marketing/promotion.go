@@ -49,8 +49,8 @@ func (s *sMarketing) PromotionList(ctx context.Context, req *v1.PromotionListReq
 	}
 
 	m := dao.Promotions.Ctx(ctx)
-	if req.Status > 0 {
-		m = m.Where(dao.Promotions.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Promotions.Columns().Status, *req.Status)
 	}
 	if req.PromoType > 0 {
 		m = m.Where(dao.Promotions.Columns().PromoType, req.PromoType)

@@ -14,7 +14,7 @@ type BrandsListReq struct {
 	PageSize   int    `json:"page_size"`    // 每页条数，默认20
 	Name       string `json:"name"`        // 按名称模糊搜索
 	FirstLetter string `json:"first_letter"` // 按首字母筛选
-	Status     int    `json:"status"`      // 按状态筛选
+	Status     *int   `json:"status"`      // 按状态筛选
 }
 type BrandsListRes struct {
 	List  []*entity.Brands `json:"list"`

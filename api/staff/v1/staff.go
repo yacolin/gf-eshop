@@ -63,7 +63,7 @@ type StaffListReq struct {
 	Page     int    `json:"page"      description:"页码"`
 	PageSize int    `json:"page_size" description:"每页条数"`
 	Keyword  string `json:"keyword"   description:"搜索关键词（用户名/姓名）"`
-	Status   int    `json:"status"    description:"状态：1-正常 0-禁用"`
+	Status   *int   `json:"status"    description:"状态：1-正常 0-禁用"`
 }
 
 type StaffListItem struct {

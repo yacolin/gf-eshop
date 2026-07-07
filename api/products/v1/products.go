@@ -59,7 +59,7 @@ type ProductsListReq struct {
 	Name       string `json:"name"`
 	CategoryId int64  `json:"category_id"`
 	BrandId    int64  `json:"brand_id"`
-	Status     int    `json:"status"`
+	Status     *int   `json:"status"`
 	PriceMin   int64  `json:"price_min"`
 	PriceMax   int64  `json:"price_max"`
 }

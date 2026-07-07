@@ -37,6 +37,7 @@ import (
 	marketingCtrl "gf-eshop/internal/controller/marketing"
 	"gf-eshop/internal/controller/address"
 	"gf-eshop/internal/controller/user"
+	"gf-eshop/internal/controller/user_admin"
 	"gf-eshop/internal/controller/user_auth"
 	"gf-eshop/internal/middleware"
 	ordersCtrl "gf-eshop/internal/controller/orders"
@@ -111,6 +112,7 @@ var (
 					permissions.NewV1(),
 					notification.NewV1(),
 					wsCtrl.NewV1(),
+					user_admin.NewV1(),
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {

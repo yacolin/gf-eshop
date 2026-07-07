@@ -6,6 +6,7 @@ import (
 	"github.com/gogf/gf/v2/os/gtime"
 
 	"gf-eshop/api/user/v1"
+	userAdminV1 "gf-eshop/api/user_admin/v1"
 	"gf-eshop/internal/dao"
 	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
@@ -95,4 +96,62 @@ func (s *sUser) UpdateInfo(ctx context.Context, req *v1.UserUpdateInfoReq) (res 
 	}
 
 	return &v1.UserUpdateInfoRes{}, nil
+}
+
+func (s *sUser) List(ctx context.Context, req *userAdminV1.UserListReq) (res *userAdminV1.UserListRes, err error) {
+	var (
+		page = req.Page
+		size = req.PageSize
+		m    = dao.Users.Ctx(ctx)
+	)
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	if req.Keyword != "" {
+		m = m.WhereOrLike(dao.Users.Columns().Username, "%"+req.Keyword+"%").
+			WhereOrLike(dao.Users.Columns().Nickname, "%"+req.Keyword+"%").
+			WhereOrLike(dao.Users.Columns().Email, "%"+req.Keyword+"%").
+			WhereOrLike(dao.Users.Columns().Phone, "%"+req.Keyword+"%")
+	}
+	if req.Status != nil {
+		m = m.Where(dao.Users.Columns().Status, *req.Status)
+	}
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return &userAdminV1.UserListRes{
+			List:  make([]*userAdminV1.UserListItem, 0),
+			Total: 0,
+		}, nil
+	}
+	var list []*entity.Users
+	err = m.Page(page, size).OrderDesc(dao.Users.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*userAdminV1.UserListItem, 0, len(list))
+	for _, u := range list {
+		items = append(items, &userAdminV1.UserListItem{
+			Id:             u.Id,
+			Username:       u.Username,
+			Nickname:       u.Nickname,
+			Email:          u.Email,
+			EmailVerified:  u.EmailVerified,
+			Phone:          u.Phone,
+			PhoneVerified:  u.PhoneVerified,
+			Avatar:         u.Avatar,
+			Status:         u.Status,
+			RegisterIp:     u.RegisterIp,
+			RegisterSource: u.RegisterSource,
+			LastLoginIp:    u.LastLoginIp,
+			LastLoginAt:    u.LastLoginAt,
+			CreatedAt:      u.CreatedAt,
+		})
+	}
+	return &userAdminV1.UserListRes{List: items, Total: total}, nil
 }

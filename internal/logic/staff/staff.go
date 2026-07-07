@@ -228,8 +228,8 @@ func (s *sStaff) List(ctx context.Context, req *v1.StaffListReq) (res *v1.StaffL
 		m = m.WhereOrLike(dao.Staff.Columns().Username, "%"+req.Keyword+"%").
 			WhereOrLike(dao.Staff.Columns().RealName, "%"+req.Keyword+"%")
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Staff.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Staff.Columns().Status, *req.Status)
 	}
 	total, err := m.Count()
 	if err != nil {

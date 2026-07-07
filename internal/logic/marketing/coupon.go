@@ -117,8 +117,8 @@ func (s *sMarketing) CouponList(ctx context.Context, req *v1.CouponListReq) (res
 	}
 
 	m := dao.UserPromotions.Ctx(ctx).Where(dao.UserPromotions.Columns().UserId, userID)
-	if req.Status > 0 {
-		m = m.Where(dao.UserPromotions.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.UserPromotions.Columns().Status, *req.Status)
 	}
 
 	total, err := m.Count()

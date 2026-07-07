@@ -35,8 +35,8 @@ func (s *sRoles) List(ctx context.Context, req *v1.RoleListReq) (res *v1.RoleLis
 	if req.RoleType != "" {
 		m = m.Where(dao.Roles.Columns().RoleType, req.RoleType)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Roles.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Roles.Columns().Status, *req.Status)
 	}
 	total, err := m.Count()
 	if err != nil {

@@ -61,13 +61,17 @@ func (s *sProducts) List(ctx context.Context, req *v1.ProductsListReq) (res *v1.
 
 // listFromZSET 通过 Redis ZSET 游标分页（仅筛选类目/品牌/状态）
 func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, cursorId int64, size int) (*v1.ProductsListRes, error) {
-	key := cacheKeyProductListIDs(req.CategoryId, req.BrandId, req.Status)
+	status := 0
+	if req.Status != nil {
+		status = *req.Status
+	}
+	key := cacheKeyProductListIDs(req.CategoryId, req.BrandId, status)
 
 	// Singleflight：同一组合仅一个 goroutine 构建 ZSET
 	_, err, _ := s.sf.Do(key, func() (interface{}, error) {
 		exists, err := g.Redis().Do(ctx, "EXISTS", key)
 		if err != nil || exists.Int() == 0 {
-			ids, err := buildProductListIDs(ctx, req.CategoryId, req.BrandId, req.Status)
+			ids, err := buildProductListIDs(ctx, req.CategoryId, req.BrandId, status)
 			if err != nil {
 				return nil, err
 			}
@@ -123,8 +127,8 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 	if req.BrandId > 0 {
 		m = m.Where(dao.Products.Columns().BrandId, req.BrandId)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Products.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Products.Columns().Status, *req.Status)
 	}
 	if req.PriceMin > 0 {
 		m = m.WhereGTE(dao.Products.Columns().MinPrice, req.PriceMin)
