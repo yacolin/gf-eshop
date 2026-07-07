@@ -62,10 +62,24 @@ func (s *sNotification) List(ctx context.Context, req *v1.NotificationListReq) (
 		size = 20
 	}
 
-	total, err := dao.Notifications.Ctx(ctx).
+	m := dao.Notifications.Ctx(ctx).
 		Where(dao.Notifications.Columns().UserId+" IN (0, ?)", staffId).
-		Where(dao.Notifications.Columns().DeletedAt, nil).
-		Count()
+		Where(dao.Notifications.Columns().DeletedAt, nil)
+	if req.IsRead != nil {
+		if *req.IsRead {
+			m = m.Where("id IN (SELECT notification_id FROM base_notification_reads WHERE user_id = ?)", staffId)
+		} else {
+			m = m.Where("id NOT IN (SELECT notification_id FROM base_notification_reads WHERE user_id = ?)", staffId)
+		}
+	}
+	if req.Title != "" {
+		m = m.WhereLike(dao.Notifications.Columns().Title, "%"+req.Title+"%")
+	}
+	if req.Category != nil {
+		m = m.Where(dao.Notifications.Columns().Category, *req.Category)
+	}
+
+	total, err := m.Count()
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +91,7 @@ func (s *sNotification) List(ctx context.Context, req *v1.NotificationListReq) (
 	}
 
 	var notifications []*entity.Notifications
-	err = dao.Notifications.Ctx(ctx).
-		Where(dao.Notifications.Columns().UserId+" IN (0, ?)", staffId).
-		Where(dao.Notifications.Columns().DeletedAt, nil).
-		OrderAsc(dao.Notifications.Columns().Priority).
+	err = m.OrderAsc(dao.Notifications.Columns().Priority).
 		OrderDesc(dao.Notifications.Columns().CreatedAt).
 		Page(page, size).
 		Scan(&notifications)

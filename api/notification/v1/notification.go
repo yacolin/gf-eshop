@@ -7,8 +7,11 @@ import (
 
 type NotificationListReq struct {
 	g.Meta   `path:"/notification" tags:"Notification" method:"get" summary:"通知列表"`
-	Page     int `json:"page"`
-	PageSize int `json:"page_size"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
+	Title    string `json:"title"`
+	Category *int   `json:"category"`
+	IsRead   *bool  `json:"is_read"`
 }
 type NotificationListItem struct {
 	Id          int64       `json:"id"`
