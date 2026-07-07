@@ -42,3 +42,10 @@ gfcli:
         jsonOmitEmpty: true
         descriptionTag: true
         noModelComment: true
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "mkt_promotions,mkt_promotion_rules,mkt_promotion_products,mkt_user_promotions,mkt_promotion_usage_logs"
+        removePrefix: "mkt_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true

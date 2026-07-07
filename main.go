@@ -29,6 +29,7 @@ import (
 	_ "gf-eshop/internal/logic/user"
 	_ "gf-eshop/internal/logic/user_auth"
 	_ "gf-eshop/internal/logic/address"
+	_ "gf-eshop/internal/logic/marketing"
 )
 
 func main() {

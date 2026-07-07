@@ -17,3 +17,5 @@ temp/
 temp.yaml
 bin
 **/config/config.yaml
+__pycache__/
+*.pyc

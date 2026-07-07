@@ -33,6 +33,8 @@ import (
 	categoriesLogic "gf-eshop/internal/logic/categories"
 	productsLogic "gf-eshop/internal/logic/products"
 	_ "gf-eshop/internal/logic/dashboard"
+	marketingLogic "gf-eshop/internal/logic/marketing"
+	marketingCtrl "gf-eshop/internal/controller/marketing"
 	"gf-eshop/internal/controller/address"
 	"gf-eshop/internal/controller/user"
 	"gf-eshop/internal/controller/user_auth"
@@ -63,6 +65,10 @@ var (
 					}),
 					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
 						return productsLogic.Warmup(ctx)
+					}),
+					productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
+						marketingLogic.Warmup(ctx)
+						return 0, nil
 					}),
 				)
 				pipeline.Run(ctx)
@@ -127,6 +133,7 @@ var (
 					cartsCtrl.NewV1(),
 					ordersCtrl.NewV1(),
 					paymentsCtrl.NewV1(),
+					marketingCtrl.NewV1(),
 				)
 			})
 		})
