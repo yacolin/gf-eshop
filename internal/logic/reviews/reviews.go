@@ -33,14 +33,17 @@ func (s *sReviews) List(ctx context.Context, req *v1.ReviewsListReq) (res *v1.Re
 	}
 
 	m := dao.Reviews.Ctx(ctx)
+	if req.Id > 0 {
+		m = m.Where(dao.Reviews.Columns().Id, req.Id)
+	}
 	if req.MerchantId > 0 {
 		m = m.Where(dao.Reviews.Columns().MerchantId, req.MerchantId)
 	}
 	if req.SpuId > 0 {
 		m = m.Where(dao.Reviews.Columns().SpuId, req.SpuId)
 	}
-	if req.Status > 0 {
-		m = m.Where(dao.Reviews.Columns().Status, req.Status)
+	if req.Status != nil {
+		m = m.Where(dao.Reviews.Columns().Status, *req.Status)
 	}
 
 	total, err := m.Count()

@@ -12,9 +12,10 @@ type ReviewsListReq struct {
 
 	Page       int   `json:"page"`
 	PageSize   int   `json:"page_size"`
-	MerchantId int64 `json:"merchant_id"`
-	SpuId      int64 `json:"spu_id"`
-	Status     int   `json:"status"`
+	Id         int   `json:"id"`
+	MerchantId int   `json:"merchant_id"`
+	SpuId      int   `json:"spu_id"`
+	Status     *int  `json:"status"`
 }
 type ReviewsListRes struct {
 	List  []*entity.Reviews `json:"list"`
