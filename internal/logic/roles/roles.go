@@ -2,6 +2,7 @@ package roles
 
 import (
 	"context"
+	"fmt"
 
 	"gf-eshop/api/roles/v1"
 	"gf-eshop/internal/dao"
@@ -9,6 +10,7 @@ import (
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
+	"gf-eshop/utility"
 )
 
 type sRoles struct{}
@@ -68,6 +70,27 @@ func (s *sRoles) Detail(ctx context.Context, req *v1.RoleDetailReq) (res *v1.Rol
 	return &v1.RoleDetailRes{Roles: entity}, nil
 }
 
+func (s *sRoles) logAudit(ctx context.Context, operation, resource, resourceId, detail string, result int, err error) {
+	claims := utility.GetStaffClaims(ctx)
+	if claims == nil {
+		return
+	}
+	failureReason := ""
+	if err != nil {
+		failureReason = err.Error()
+	}
+	_ = service.OperationLogs().Log(ctx, &service.OperationLogInput{
+		StaffId:       claims.StaffId,
+		StaffName:     claims.RealName,
+		Operation:     operation,
+		Resource:      resource,
+		ResourceId:    resourceId,
+		Detail:        detail,
+		Result:        result,
+		FailureReason: failureReason,
+	})
+}
+
 func (s *sRoles) Create(ctx context.Context, req *v1.RoleCreateReq) (res *v1.RoleCreateRes, err error) {
 	result, err := dao.Roles.Ctx(ctx).Insert(do.Roles{
 		Name:        req.Name,
@@ -78,9 +101,11 @@ func (s *sRoles) Create(ctx context.Context, req *v1.RoleCreateReq) (res *v1.Rol
 		Status:      req.Status,
 	})
 	if err != nil {
+		s.logAudit(ctx, "create", "role", "", fmt.Sprintf("name=%s", req.Name), 0, err)
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
+	s.logAudit(ctx, "create", "role", fmt.Sprintf("%d", id), fmt.Sprintf("name=%s", req.Name), 1, nil)
 	return &v1.RoleCreateRes{Id: id}, nil
 }
 
@@ -90,6 +115,7 @@ func (s *sRoles) Update(ctx context.Context, req *v1.RoleUpdateReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
+		s.logAudit(ctx, "update", "role", fmt.Sprintf("%d", req.Id), "not_found", 0, errcode.ErrRoleNotFound)
 		return nil, errcode.ErrRoleNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Data(do.Roles{
@@ -101,8 +127,10 @@ func (s *sRoles) Update(ctx context.Context, req *v1.RoleUpdateReq) (res *v1.Rol
 		Status:      req.Status,
 	}).Where(dao.Roles.Columns().Id, req.Id).Update()
 	if err != nil {
+		s.logAudit(ctx, "update", "role", fmt.Sprintf("%d", req.Id), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "update", "role", fmt.Sprintf("%d", req.Id), "", 1, nil)
 	return &v1.RoleUpdateRes{}, nil
 }
 
@@ -112,12 +140,15 @@ func (s *sRoles) Delete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.Rol
 		return nil, err
 	}
 	if count == 0 {
+		s.logAudit(ctx, "delete", "role", fmt.Sprintf("%d", req.Id), "not_found", 0, errcode.ErrRoleNotFound)
 		return nil, errcode.ErrRoleNotFound
 	}
 	_, err = dao.Roles.Ctx(ctx).Where(dao.Roles.Columns().Id, req.Id).Delete()
 	if err != nil {
+		s.logAudit(ctx, "delete", "role", fmt.Sprintf("%d", req.Id), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "delete", "role", fmt.Sprintf("%d", req.Id), "", 1, nil)
 	return &v1.RoleDeleteRes{}, nil
 }
 
