@@ -20,6 +20,27 @@ import (
 	"gf-eshop/utility"
 )
 
+func (s *sStaff) logAudit(ctx context.Context, operation, resource, resourceId, detail string, result int, err error) {
+	claims := utility.GetStaffClaims(ctx)
+	if claims == nil {
+		return
+	}
+	failureReason := ""
+	if err != nil {
+		failureReason = err.Error()
+	}
+	_ = service.OperationLogs().Log(ctx, &service.OperationLogInput{
+		StaffId:       claims.StaffId,
+		StaffName:     claims.RealName,
+		Operation:     operation,
+		Resource:      resource,
+		ResourceId:    resourceId,
+		Detail:        detail,
+		Result:        result,
+		FailureReason: failureReason,
+	})
+}
+
 type sStaff struct{}
 
 func init() {
@@ -185,15 +206,18 @@ func (s *sStaff) Profile(ctx context.Context, req *v1.StaffProfileReq) (res *v1.
 		return nil, errcode.ErrUserNotFound
 	}
 
+	deptIds, deptNames := s.getStaffDepartments(ctx, staff.Id)
 	return &v1.StaffProfileRes{
-		Id:          staff.Id,
-		Username:    staff.Username,
-		RealName:    staff.RealName,
-		Email:       staff.Email,
-		Phone:       staff.Phone,
-		Avatar:      staff.Avatar,
-		Status:      staff.Status,
-		LastLoginIp: staff.LastLoginIp,
+		Id:              staff.Id,
+		Username:        staff.Username,
+		RealName:        staff.RealName,
+		Email:           staff.Email,
+		Phone:           staff.Phone,
+		Avatar:          staff.Avatar,
+		Status:          staff.Status,
+		LastLoginIp:     staff.LastLoginIp,
+		DepartmentIds:   deptIds,
+		DepartmentNames: deptNames,
 	}, nil
 }
 
@@ -210,6 +234,27 @@ func (s *sStaff) Permissions(ctx context.Context, req *v1.StaffPermissionsReq) (
 		Roles:       roles,
 		Permissions: perms,
 	}, nil
+}
+
+func (s *sStaff) getStaffDepartments(ctx context.Context, staffId int64) (ids []int64, names []string) {
+	type DeptInfo struct {
+		DepartmentId   int64
+		DepartmentName string
+	}
+	var depts []DeptInfo
+	err := dao.StaffDepartments.Ctx(ctx).
+		InnerJoin("sys_departments", "sys_departments.id = sys_staff_departments.department_id").
+		Where("sys_staff_departments.staff_id", staffId).
+		Fields("sys_staff_departments.department_id", "sys_departments.name AS department_name").
+		Scan(&depts)
+	if err != nil || len(depts) == 0 {
+		return []int64{}, []string{}
+	}
+	for _, d := range depts {
+		ids = append(ids, d.DepartmentId)
+		names = append(names, d.DepartmentName)
+	}
+	return
 }
 
 func (s *sStaff) List(ctx context.Context, req *v1.StaffListReq) (res *v1.StaffListRes, err error) {
@@ -270,24 +315,46 @@ func (s *sStaff) List(ctx context.Context, req *v1.StaffListReq) (res *v1.StaffL
 	roleMap := make(map[int64]*v1.StaffListItem)
 	for _, s := range staffList {
 		roleMap[s.Id] = &v1.StaffListItem{
-			Id:          s.Id,
-			Username:    s.Username,
-			RealName:    s.RealName,
-			Email:       s.Email,
-			Phone:       s.Phone,
-			Avatar:      s.Avatar,
-			Status:      s.Status,
-			LastLoginIp: s.LastLoginIp,
-			LastLoginAt: s.LastLoginAt,
-			CreatedAt:   s.CreatedAt,
-			RoleIds:     make([]int64, 0),
-			RoleNames:   make([]string, 0),
+			Id:              s.Id,
+			Username:        s.Username,
+			RealName:        s.RealName,
+			Email:           s.Email,
+			Phone:           s.Phone,
+			Avatar:          s.Avatar,
+			Status:          s.Status,
+			LastLoginIp:     s.LastLoginIp,
+			LastLoginAt:     s.LastLoginAt,
+			CreatedAt:       s.CreatedAt,
+			RoleIds:         make([]int64, 0),
+			RoleNames:       make([]string, 0),
+			DepartmentIds:   make([]int64, 0),
+			DepartmentNames: make([]string, 0),
 		}
 	}
 	for _, sr := range staffRoles {
 		if item, ok := roleMap[sr.StaffId]; ok {
 			item.RoleIds = append(item.RoleIds, sr.RoleId)
 			item.RoleNames = append(item.RoleNames, sr.RoleName)
+		}
+	}
+
+	type StaffDept struct {
+		StaffId        int64
+		DepartmentId   int64
+		DepartmentName string
+	}
+	var staffDepts []StaffDept
+	err = dao.StaffDepartments.Ctx(ctx).
+		InnerJoin("sys_departments", "sys_departments.id = sys_staff_departments.department_id").
+		WhereIn("sys_staff_departments.staff_id", staffIds).
+		Fields("sys_staff_departments.staff_id", "sys_staff_departments.department_id", "sys_departments.name AS department_name").
+		Scan(&staffDepts)
+	if err == nil {
+		for _, sd := range staffDepts {
+			if item, ok := roleMap[sd.StaffId]; ok {
+				item.DepartmentIds = append(item.DepartmentIds, sd.DepartmentId)
+				item.DepartmentNames = append(item.DepartmentNames, sd.DepartmentName)
+			}
 		}
 	}
 
@@ -304,6 +371,7 @@ func (s *sStaff) AssignRoles(ctx context.Context, req *v1.StaffAssignRolesReq) (
 		return nil, err
 	}
 	if count == 0 {
+		s.logAudit(ctx, "assign_roles", "staff", fmt.Sprintf("%d", req.Id), "staff_not_found", 0, errcode.ErrUserNotFound)
 		return nil, errcode.ErrUserNotFound
 	}
 
@@ -324,8 +392,11 @@ func (s *sStaff) AssignRoles(ctx context.Context, req *v1.StaffAssignRolesReq) (
 		return nil
 	})
 	if err != nil {
+		s.logAudit(ctx, "assign_roles", "staff", fmt.Sprintf("%d", req.Id), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "assign_roles", "staff", fmt.Sprintf("%d", req.Id),
+		fmt.Sprintf("role_ids=%v", req.RoleIds), 1, nil)
 	return &v1.StaffAssignRolesRes{}, nil
 }
 

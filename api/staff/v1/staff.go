@@ -40,14 +40,16 @@ type StaffProfileReq struct {
 	g.Meta `path:"/staff/profile" tags:"Staff" method:"get" summary:"获取当前用户信息"`
 }
 type StaffProfileRes struct {
-	Id          int64  `json:"id"          description:"用户ID"`
-	Username    string `json:"username"    description:"用户名"`
-	RealName    string `json:"real_name"   description:"真实姓名"`
-	Email       string `json:"email"       description:"邮箱"`
-	Phone       string `json:"phone"       description:"手机号"`
-	Avatar      string `json:"avatar"      description:"头像URL"`
-	Status      int    `json:"status"      description:"状态"`
-	LastLoginIp string `json:"last_login_ip" description:"最后登录IP"`
+	Id              int64       `json:"id"               description:"用户ID"`
+	Username        string      `json:"username"         description:"用户名"`
+	RealName        string      `json:"real_name"        description:"真实姓名"`
+	Email           string      `json:"email"            description:"邮箱"`
+	Phone           string      `json:"phone"            description:"手机号"`
+	Avatar          string      `json:"avatar"           description:"头像URL"`
+	Status          int         `json:"status"           description:"状态"`
+	LastLoginIp     string      `json:"last_login_ip"    description:"最后登录IP"`
+	DepartmentIds   []int64     `json:"department_ids"   description:"所属部门ID列表"`
+	DepartmentNames []string    `json:"department_names" description:"所属部门名称列表"`
 }
 
 type StaffPermissionsReq struct {
@@ -67,18 +69,20 @@ type StaffListReq struct {
 }
 
 type StaffListItem struct {
-	Id          int64       `json:"id"              description:"主键"`
-	Username    string      `json:"username"        description:"登录用户名"`
-	RealName    string      `json:"real_name"       description:"真实姓名"`
-	Email       string      `json:"email"           description:"邮箱"`
-	Phone       string      `json:"phone"           description:"手机号"`
-	Avatar      string      `json:"avatar"          description:"头像URL"`
-	Status      int         `json:"status"          description:"1-正常 0-禁用"`
-	LastLoginIp string      `json:"last_login_ip"   description:"最后登录IP"`
-	LastLoginAt *gtime.Time `json:"last_login_at"   description:"最后登录时间"`
-	CreatedAt   *gtime.Time `json:"created_at"      description:"创建时间"`
-	RoleIds     []int64     `json:"role_ids"        description:"角色ID列表"`
-	RoleNames   []string    `json:"role_names"      description:"角色名称列表"`
+	Id              int64       `json:"id"               description:"主键"`
+	Username        string      `json:"username"         description:"登录用户名"`
+	RealName        string      `json:"real_name"        description:"真实姓名"`
+	Email           string      `json:"email"            description:"邮箱"`
+	Phone           string      `json:"phone"            description:"手机号"`
+	Avatar          string      `json:"avatar"           description:"头像URL"`
+	Status          int         `json:"status"           description:"1-正常 0-禁用"`
+	LastLoginIp     string      `json:"last_login_ip"    description:"最后登录IP"`
+	LastLoginAt     *gtime.Time `json:"last_login_at"    description:"最后登录时间"`
+	CreatedAt       *gtime.Time `json:"created_at"       description:"创建时间"`
+	RoleIds         []int64     `json:"role_ids"         description:"角色ID列表"`
+	RoleNames       []string    `json:"role_names"       description:"角色名称列表"`
+	DepartmentIds   []int64     `json:"department_ids"   description:"所属部门ID列表"`
+	DepartmentNames []string    `json:"department_names" description:"所属部门名称列表"`
 }
 type StaffListRes struct {
 	List  []*StaffListItem `json:"list"`
