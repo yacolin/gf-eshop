@@ -21,7 +21,7 @@ type Addresses struct {
 	Detail    string      `json:"detail"     description:"详细地址"`
 	ZipCode   string      `json:"zip_code"   description:"邮编"`
 	Tag       string      `json:"tag"        description:"地址标签：home/office/company/other"`
-	IsDefault int         `json:"is_default" description:"是否默认地址"`
+	IsDefault int         `json:"is_default" description:"是否默认地址（NULL=非默认, 1=默认）"`
 	CreatedAt *gtime.Time `json:"created_at" description:"创建时间"`
 	UpdatedAt *gtime.Time `json:"updated_at" description:"更新时间"`
 	DeletedAt *gtime.Time `json:"deleted_at" description:"删除时间"`

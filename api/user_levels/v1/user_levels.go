@@ -32,7 +32,6 @@ type LevelsCreateReq struct {
 	Icon             string  `json:"icon"              description:"等级图标URL"`
 	Level            int     `json:"level"             v:"required" description:"等级数值"`
 	MinPoints        int64   `json:"min_points"        description:"最低累计积分"`
-	MaxPoints        int64   `json:"max_points"        description:"最高累计积分（0无上限）"`
 	DiscountRate     int64   `json:"discount_rate"     description:"折扣率（千分比，1000=无折扣）"`
 	FreeShipping     int     `json:"free_shipping"     description:"1-免运费"`
 	PointsMultiplier float64 `json:"points_multiplier" description:"消费积分倍数"`
@@ -51,7 +50,6 @@ type LevelsUpdateReq struct {
 	Icon             string  `json:"icon"              description:"等级图标URL"`
 	Level            int     `json:"level"             description:"等级数值"`
 	MinPoints        int64   `json:"min_points"        description:"最低累计积分"`
-	MaxPoints        int64   `json:"max_points"        description:"最高累计积分（0无上限）"`
 	DiscountRate     int64   `json:"discount_rate"     description:"折扣率（千分比，1000=无折扣）"`
 	FreeShipping     int     `json:"free_shipping"     description:"1-免运费"`
 	PointsMultiplier float64 `json:"points_multiplier" description:"消费积分倍数"`

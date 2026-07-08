@@ -18,6 +18,7 @@ type Permissions struct {
 	Description interface{} // 权限描述
 	Resource    interface{} // 资源（如 order/product/user）
 	Action      interface{} // 操作（如 create/read/update/delete）
+	ParentId    interface{} // 父级ID（0=根节点，支持菜单/按钮树形层级）
 	Category    interface{} // 分类（如 business/system/admin）
 	SortOrder   interface{} // 排序值
 	Status      interface{} // 1-启用 0-禁用

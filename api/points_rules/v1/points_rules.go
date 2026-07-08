@@ -30,12 +30,14 @@ type PointsRulesDetailRes struct {
 
 type PointsRulesCreateReq struct {
 	g.Meta      `path:"/points-rules" tags:"PointsRules" method:"post" summary:"新增积分规则"`
-	Name        string `json:"name"        v:"required#规则名称不能为空"` // 规则名称
-	RuleKey     string `json:"rule_key"     v:"required#规则键名不能为空"` // 规则键名
-	RuleValue   string `json:"rule_value"   v:"required#规则值不能为空"` // 规则值
-	Description string `json:"description"`                          // 规则说明
-	SortOrder   int    `json:"sort_order"`                           // 排序
-	Status      int    `json:"status"`                               // 状态
+	Name        string  `json:"name"         v:"required#规则名称不能为空"` // 规则名称
+	RuleKey     string  `json:"rule_key"     v:"required#规则键名不能为空"` // 规则键名
+	ValueInt    int     `json:"value_int"    description:"整数值（如积分数量、天数）"`
+	ValueDecimal float64 `json:"value_decimal" description:"小数值（如比例、倍数）"`
+	ValueString string  `json:"value_string" description:"字符串值（如配置json、文本）"`
+	Description string  `json:"description"`                          // 规则说明
+	SortOrder   int     `json:"sort_order"`                           // 排序
+	Status      int     `json:"status"`                               // 状态
 }
 
 type PointsRulesCreateRes struct {
@@ -44,13 +46,15 @@ type PointsRulesCreateRes struct {
 
 type PointsRulesUpdateReq struct {
 	g.Meta      `path:"/points-rules/{id}" tags:"PointsRules" method:"put" summary:"更新积分规则"`
-	Id          int    `json:"id"          v:"required#规则ID不能为空"`
-	Name        string `json:"name"`        // 规则名称
-	RuleKey     string `json:"rule_key"`     // 规则键名
-	RuleValue   string `json:"rule_value"`   // 规则值
-	Description string `json:"description"`  // 规则说明
-	SortOrder   *int   `json:"sort_order"`   // 排序
-	Status      *int   `json:"status"`       // 状态
+	Id          int      `json:"id"          v:"required#规则ID不能为空"`
+	Name        string   `json:"name"`        // 规则名称
+	RuleKey     string   `json:"rule_key"`    // 规则键名
+	ValueInt    *int     `json:"value_int"    description:"整数值（如积分数量、天数）"`
+	ValueDecimal *float64 `json:"value_decimal" description:"小数值（如比例、倍数）"`
+	ValueString string   `json:"value_string" description:"字符串值（如配置json、文本）"`
+	Description string   `json:"description"` // 规则说明
+	SortOrder   *int     `json:"sort_order"`  // 排序
+	Status      *int     `json:"status"`      // 状态
 }
 
 type PointsRulesUpdateRes struct{}

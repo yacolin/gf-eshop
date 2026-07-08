@@ -20,28 +20,32 @@ type PointsRulesDao struct {
 
 // PointsRulesColumns defines and stores column names for table usr_points_rules.
 type PointsRulesColumns struct {
-	Id          string //
-	Name        string // 规则名称
-	RuleKey     string // 规则键名：earn_rate-消费返积分比例 expire_days-积分过期天数 signin_points-签到奖励积分 review_points-评价奖励积分
-	RuleValue   string // 规则值
-	Description string // 规则说明
-	SortOrder   string // 排序
-	Status      string // 状态：0-禁用 1-启用
-	CreatedAt   string //
-	UpdatedAt   string //
+	Id           string //
+	Name         string // 规则名称
+	RuleKey      string // 规则键名：earn_rate-消费返积分比例 expire_days-积分过期天数 signin_points-签到奖励积分 review_points-评价奖励积分
+	ValueInt     string // 整数值（如积分数量、天数）
+	ValueDecimal string // 小数值（如比例、倍数）
+	ValueString  string // 字符串值（如配置json、文本）
+	Description  string // 规则说明
+	SortOrder    string // 排序
+	Status       string // 状态：0-禁用 1-启用
+	CreatedAt    string //
+	UpdatedAt    string //
 }
 
 // pointsRulesColumns holds the columns for table usr_points_rules.
 var pointsRulesColumns = PointsRulesColumns{
-	Id:          "id",
-	Name:        "name",
-	RuleKey:     "rule_key",
-	RuleValue:   "rule_value",
-	Description: "description",
-	SortOrder:   "sort_order",
-	Status:      "status",
-	CreatedAt:   "created_at",
-	UpdatedAt:   "updated_at",
+	Id:           "id",
+	Name:         "name",
+	RuleKey:      "rule_key",
+	ValueInt:     "value_int",
+	ValueDecimal: "value_decimal",
+	ValueString:  "value_string",
+	Description:  "description",
+	SortOrder:    "sort_order",
+	Status:       "status",
+	CreatedAt:    "created_at",
+	UpdatedAt:    "updated_at",
 }
 
 // NewPointsRulesDao creates and returns a new DAO object for table data access.

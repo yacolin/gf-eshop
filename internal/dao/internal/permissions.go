@@ -26,6 +26,7 @@ type PermissionsColumns struct {
 	Description string // 权限描述
 	Resource    string // 资源（如 order/product/user）
 	Action      string // 操作（如 create/read/update/delete）
+	ParentId    string // 父级ID（0=根节点，支持菜单/按钮树形层级）
 	Category    string // 分类（如 business/system/admin）
 	SortOrder   string // 排序值
 	Status      string // 1-启用 0-禁用
@@ -42,6 +43,7 @@ var permissionsColumns = PermissionsColumns{
 	Description: "description",
 	Resource:    "resource",
 	Action:      "action",
+	ParentId:    "parent_id",
 	Category:    "category",
 	SortOrder:   "sort_order",
 	Status:      "status",

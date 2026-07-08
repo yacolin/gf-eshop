@@ -27,7 +27,7 @@ type MerchantBankAccountsColumns struct {
 	AccountName string // 开户名
 	AccountNo   string // 银行账号
 	AccountType string // 1-对公账户 2-对私账户
-	IsDefault   string // 是否默认结算账户 0-否 1-是
+	IsDefault   string // 是否默认结算账户（NULL=非默认, 1=默认）
 	Status      string // 1-正常 2-禁用
 	CreatedAt   string //
 	UpdatedAt   string //

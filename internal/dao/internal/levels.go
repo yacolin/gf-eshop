@@ -22,10 +22,9 @@ type LevelsDao struct {
 type LevelsColumns struct {
 	Id               string // 等级ID
 	Name             string // 等级名称（如：青铜会员、白银会员、黄金会员、钻石会员）
-	Icon             string // 等级图标URL
 	Level            string // 等级数值（1=青铜 2=白银 3=黄金 4=钻石）
+	Icon             string // 等级图标URL
 	MinPoints        string // 该等级所需最低累计积分
-	MaxPoints        string // 该等级所需最高累计积分（0表示无上限）
 	DiscountRate     string // 折扣率（千分比，1000=无折扣，900=九折）
 	FreeShipping     string // 1-免运费
 	PointsMultiplier string // 消费积分倍数（如 1.5 倍积分）
@@ -41,10 +40,9 @@ type LevelsColumns struct {
 var levelsColumns = LevelsColumns{
 	Id:               "id",
 	Name:             "name",
-	Icon:             "icon",
 	Level:            "level",
+	Icon:             "icon",
 	MinPoints:        "min_points",
-	MaxPoints:        "max_points",
 	DiscountRate:     "discount_rate",
 	FreeShipping:     "free_shipping",
 	PointsMultiplier: "points_multiplier",

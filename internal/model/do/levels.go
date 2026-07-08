@@ -14,10 +14,9 @@ type Levels struct {
 	g.Meta           `orm:"table:usr_levels, do:true"`
 	Id               interface{} // 等级ID
 	Name             interface{} // 等级名称（如：青铜会员、白银会员、黄金会员、钻石会员）
-	Icon             interface{} // 等级图标URL
 	Level            interface{} // 等级数值（1=青铜 2=白银 3=黄金 4=钻石）
+	Icon             interface{} // 等级图标URL
 	MinPoints        interface{} // 该等级所需最低累计积分
-	MaxPoints        interface{} // 该等级所需最高累计积分（0表示无上限）
 	DiscountRate     interface{} // 折扣率（千分比，1000=无折扣，900=九折）
 	FreeShipping     interface{} // 1-免运费
 	PointsMultiplier interface{} // 消费积分倍数（如 1.5 倍积分）

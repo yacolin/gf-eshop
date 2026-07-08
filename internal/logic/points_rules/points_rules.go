@@ -68,12 +68,14 @@ func (s *sPointsRules) Detail(ctx context.Context, req *v1.PointsRulesDetailReq)
 
 func (s *sPointsRules) Create(ctx context.Context, req *v1.PointsRulesCreateReq) (res *v1.PointsRulesCreateRes, err error) {
 	result, err := dao.PointsRules.Ctx(ctx).Insert(do.PointsRules{
-		Name:        req.Name,
-		RuleKey:     req.RuleKey,
-		RuleValue:   req.RuleValue,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
-		Status:      req.Status,
+		Name:         req.Name,
+		RuleKey:      req.RuleKey,
+		ValueInt:     req.ValueInt,
+		ValueDecimal: req.ValueDecimal,
+		ValueString:  req.ValueString,
+		Description:  req.Description,
+		SortOrder:    req.SortOrder,
+		Status:       req.Status,
 	})
 	if err != nil {
 		return nil, err
@@ -95,12 +97,14 @@ func (s *sPointsRules) Update(ctx context.Context, req *v1.PointsRulesUpdateReq)
 	}
 
 	_, err = dao.PointsRules.Ctx(ctx).Where(dao.PointsRules.Columns().Id, req.Id).Update(do.PointsRules{
-		Name:        req.Name,
-		RuleKey:     req.RuleKey,
-		RuleValue:   req.RuleValue,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
-		Status:      req.Status,
+		Name:         req.Name,
+		RuleKey:      req.RuleKey,
+		ValueInt:     req.ValueInt,
+		ValueDecimal: req.ValueDecimal,
+		ValueString:  req.ValueString,
+		Description:  req.Description,
+		SortOrder:    req.SortOrder,
+		Status:       req.Status,
 	})
 	if err != nil {
 		return nil, err

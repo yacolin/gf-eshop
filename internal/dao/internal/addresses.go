@@ -31,7 +31,7 @@ type AddressesColumns struct {
 	Detail    string // 详细地址
 	ZipCode   string // 邮编
 	Tag       string // 地址标签：home/office/company/other
-	IsDefault string // 是否默认地址
+	IsDefault string // 是否默认地址（NULL=非默认, 1=默认）
 	CreatedAt string // 创建时间
 	UpdatedAt string // 更新时间
 	DeletedAt string // 删除时间

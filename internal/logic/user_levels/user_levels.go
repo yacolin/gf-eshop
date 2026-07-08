@@ -77,7 +77,6 @@ func (s *sUserLevels) Create(ctx context.Context, req *v1.LevelsCreateReq) (res 
 		Icon:             req.Icon,
 		Level:            req.Level,
 		MinPoints:        req.MinPoints,
-		MaxPoints:        req.MaxPoints,
 		DiscountRate:     req.DiscountRate,
 		FreeShipping:     req.FreeShipping,
 		PointsMultiplier: req.PointsMultiplier,
@@ -107,7 +106,6 @@ func (s *sUserLevels) Update(ctx context.Context, req *v1.LevelsUpdateReq) (res 
 		Icon:             req.Icon,
 		Level:            req.Level,
 		MinPoints:        req.MinPoints,
-		MaxPoints:        req.MaxPoints,
 		DiscountRate:     req.DiscountRate,
 		FreeShipping:     req.FreeShipping,
 		PointsMultiplier: req.PointsMultiplier,
@@ -171,12 +169,11 @@ func (s *sUserLevels) UserLevel(ctx context.Context, req *v1.UserLevelReq) (res 
 	var currentLevel *entity.Levels
 	var nextLevel *entity.Levels
 	for i, l := range levels {
-		if currentPoints >= l.MinPoints && (l.MaxPoints == 0 || currentPoints <= l.MaxPoints) {
+		if currentPoints >= l.MinPoints {
 			currentLevel = l
 			if i+1 < len(levels) {
 				nextLevel = levels[i+1]
 			}
-			break
 		}
 	}
 

@@ -16,6 +16,7 @@ type Permissions struct {
 	Description string      `json:"description"  description:"权限描述"`
 	Resource    string      `json:"resource"     description:"资源（如 order/product/user）"`
 	Action      string      `json:"action"       description:"操作（如 create/read/update/delete）"`
+	ParentId    int64       `json:"parent_id"    description:"父级ID（0=根节点，支持菜单/按钮树形层级）"`
 	Category    string      `json:"category"     description:"分类（如 business/system/admin）"`
 	SortOrder   int         `json:"sort_order"   description:"排序值"`
 	Status      int         `json:"status"       description:"1-启用 0-禁用"`

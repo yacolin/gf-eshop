@@ -19,7 +19,7 @@ type MerchantBankAccounts struct {
 	AccountName interface{} // 开户名
 	AccountNo   interface{} // 银行账号
 	AccountType interface{} // 1-对公账户 2-对私账户
-	IsDefault   interface{} // 是否默认结算账户 0-否 1-是
+	IsDefault   interface{} // 是否默认结算账户（NULL=非默认, 1=默认）
 	Status      interface{} // 1-正常 2-禁用
 	CreatedAt   *gtime.Time //
 	UpdatedAt   *gtime.Time //

@@ -23,7 +23,7 @@ type Addresses struct {
 	Detail    interface{} // 详细地址
 	ZipCode   interface{} // 邮编
 	Tag       interface{} // 地址标签：home/office/company/other
-	IsDefault interface{} // 是否默认地址
+	IsDefault interface{} // 是否默认地址（NULL=非默认, 1=默认）
 	CreatedAt *gtime.Time // 创建时间
 	UpdatedAt *gtime.Time // 更新时间
 	DeletedAt *gtime.Time // 删除时间

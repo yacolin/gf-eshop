@@ -17,7 +17,7 @@ type MerchantBankAccounts struct {
 	AccountName string      `json:"account_name" description:"开户名"`
 	AccountNo   string      `json:"account_no"   description:"银行账号"`
 	AccountType int         `json:"account_type" description:"1-对公账户 2-对私账户"`
-	IsDefault   int         `json:"is_default"   description:"是否默认结算账户 0-否 1-是"`
+	IsDefault   int         `json:"is_default"   description:"是否默认结算账户（NULL=非默认, 1=默认）"`
 	Status      int         `json:"status"       description:"1-正常 2-禁用"`
 	CreatedAt   *gtime.Time `json:"created_at"   description:""`
 	UpdatedAt   *gtime.Time `json:"updated_at"   description:""`
