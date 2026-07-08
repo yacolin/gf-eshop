@@ -37,6 +37,8 @@ import (
 	marketingLogic "gf-eshop/internal/logic/marketing"
 	merchantsLogic "gf-eshop/internal/logic/merchants"
 	departmentsLogic "gf-eshop/internal/logic/departments"
+	_ "gf-eshop/internal/logic/merchant_roles"
+	_ "gf-eshop/internal/logic/merchant_role_permissions"
 	_ "gf-eshop/internal/logic/merchant_withdrawals"
 	_ "gf-eshop/internal/logic/merchant_balances"
 	marketingCtrl "gf-eshop/internal/controller/marketing"
@@ -59,6 +61,8 @@ import (
 	merchantQualificationsCtrl "gf-eshop/internal/controller/merchant_qualifications"
 	merchantWithdrawalsCtrl "gf-eshop/internal/controller/merchant_withdrawals"
 	merchantBalancesCtrl "gf-eshop/internal/controller/merchant_balances"
+	merchantRolesCtrl "gf-eshop/internal/controller/merchant_roles"
+	merchantRolePermissionsCtrl "gf-eshop/internal/controller/merchant_role_permissions"
 	reviewsCtrl "gf-eshop/internal/controller/reviews"
 	"gf-eshop/internal/controller/merchants"
 	"gf-eshop/internal/service"
@@ -136,6 +140,8 @@ var (
 					merchantQualificationsCtrl.NewV1(),
 					merchantWithdrawalsCtrl.NewV1(),
 					merchantBalancesCtrl.NewV1(),
+					merchantRolesCtrl.NewV1(),
+					merchantRolePermissionsCtrl.NewV1(),
 
 				dashboardCtrl.NewV1(),
 					reviewsCtrl.NewV1(),

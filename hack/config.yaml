@@ -67,7 +67,7 @@ gfcli:
         noModelComment: true
 
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "mch_merchants,mch_merchant_balances,mch_merchant_bank_accounts,mch_merchant_contacts,mch_merchant_qualifications,mch_merchant_settlement_logs,mch_merchant_users,mch_merchant_withdrawals,mch_settlement_details"
+        tables: "mch_merchants,mch_merchant_balances,mch_merchant_bank_accounts,mch_merchant_contacts,mch_merchant_qualifications,mch_merchant_roles,mch_merchant_role_permissions,mch_merchant_settlement_logs,mch_merchant_users,mch_merchant_withdrawals,mch_settlement_details"
         removePrefix: "mch_"
         jsonCase: "Snake"
         jsonOmitEmpty: true

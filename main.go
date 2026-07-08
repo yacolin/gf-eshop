@@ -40,6 +40,8 @@ import (
 	_ "gf-eshop/internal/logic/merchant_qualifications"
 	_ "gf-eshop/internal/logic/merchant_withdrawals"
 	_ "gf-eshop/internal/logic/merchant_balances"
+	_ "gf-eshop/internal/logic/merchant_roles"
+	_ "gf-eshop/internal/logic/merchant_role_permissions"
 	_ "gf-eshop/internal/logic/operation_logs"
 	_ "gf-eshop/internal/logic/departments"
 	_ "gf-eshop/internal/logic/reviews"
