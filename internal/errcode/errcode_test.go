@@ -32,6 +32,11 @@ func TestNoDuplicateCodes(t *testing.T) {
 		ErrRefundFailed,
 		ErrInvalidOrderStatus,
 		ErrOrderItemNotFound,
+		ErrMerchantsNotFound,
+		ErrMerchantBankAccountNotFound,
+		ErrMerchantContactNotFound,
+		ErrMerchantQualificationNotFound,
+		ErrMerchantWithdrawalNotFound,
 	}
 
 	seen := make(map[int]string)

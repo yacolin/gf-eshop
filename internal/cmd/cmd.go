@@ -34,6 +34,9 @@ import (
 	productsLogic "gf-eshop/internal/logic/products"
 	_ "gf-eshop/internal/logic/dashboard"
 	marketingLogic "gf-eshop/internal/logic/marketing"
+	merchantsLogic "gf-eshop/internal/logic/merchants"
+	_ "gf-eshop/internal/logic/merchant_withdrawals"
+	_ "gf-eshop/internal/logic/merchant_balances"
 	marketingCtrl "gf-eshop/internal/controller/marketing"
 	"gf-eshop/internal/controller/address"
 	"gf-eshop/internal/controller/user"
@@ -48,6 +51,13 @@ import (
 	ordersCtrl "gf-eshop/internal/controller/orders"
 	paymentsCtrl "gf-eshop/internal/controller/payments"
 	cartsCtrl "gf-eshop/internal/controller/carts"
+
+	merchantBankAccountsCtrl "gf-eshop/internal/controller/merchant_bank_accounts"
+	merchantContactsCtrl "gf-eshop/internal/controller/merchant_contacts"
+	merchantQualificationsCtrl "gf-eshop/internal/controller/merchant_qualifications"
+	merchantWithdrawalsCtrl "gf-eshop/internal/controller/merchant_withdrawals"
+	merchantBalancesCtrl "gf-eshop/internal/controller/merchant_balances"
+	"gf-eshop/internal/controller/merchants"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
 	"gf-eshop/utility"
@@ -72,11 +82,15 @@ var (
 					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
 						return productsLogic.Warmup(ctx)
 					}),
-					productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
-						marketingLogic.Warmup(ctx)
-						return 0, nil
-					}),
-				)
+				productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
+					marketingLogic.Warmup(ctx)
+					return 0, nil
+				}),
+				productsLogic.NewFuncStage("merchants", func(ctx context.Context) (int, error) {
+					merchantsLogic.Warmup(ctx)
+					return 0, nil
+				}),
+			)
 				pipeline.Run(ctx)
 				// 启动仪表盘定时刷新
 				service.Dashboard().StartPeriodicRefresh(ctx)
@@ -108,6 +122,14 @@ var (
 					inventoriesCtrl.NewWarehousesV1(),
 					inventoryLogsCtrl.NewV1(),
 					productVersionsCtrl.NewV1(),
+
+					merchants.NewV1(),
+					merchantBankAccountsCtrl.NewV1(),
+					merchantContactsCtrl.NewV1(),
+					merchantQualificationsCtrl.NewV1(),
+					merchantWithdrawalsCtrl.NewV1(),
+					merchantBalancesCtrl.NewV1(),
+
 				dashboardCtrl.NewV1(),
 				)
 			group.Group("/", func(group *ghttp.RouterGroup) {
@@ -119,7 +141,7 @@ var (
 					wsCtrl.NewV1(),
 					user_admin.NewV1(),
 					user_levels.NewV1(),
-					user_points.NewV1(),
+					user_points.NewV1(),	
 				)
 			})
 			group.Group("/", func(group *ghttp.RouterGroup) {

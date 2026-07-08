@@ -34,6 +34,12 @@ import (
 	_ "gf-eshop/internal/logic/user_points"
 	_ "gf-eshop/internal/logic/points_rules"
 	_ "gf-eshop/internal/logic/level_rules"
+	_ "gf-eshop/internal/logic/merchants"
+	_ "gf-eshop/internal/logic/merchant_bank_accounts"
+	_ "gf-eshop/internal/logic/merchant_contacts"
+	_ "gf-eshop/internal/logic/merchant_qualifications"
+	_ "gf-eshop/internal/logic/merchant_withdrawals"
+	_ "gf-eshop/internal/logic/merchant_balances"
 )
 
 func main() {

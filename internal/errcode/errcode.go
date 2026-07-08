@@ -76,6 +76,12 @@ const (
 	CodeNotificationTemplateNotFound = 9002
 	CodeInvalidOrderStatus           = 7002
 	CodeOrderItemNotFound   = 7003
+
+	CodeMerchantsNotFound           = 10001
+	CodeMerchantBankAccountNotFound  = 10002
+	CodeMerchantContactNotFound      = 10003
+	CodeMerchantQualificationNotFound = 10004
+	CodeMerchantWithdrawalNotFound   = 10005
 )
 
 // ============================================================================
@@ -168,4 +174,17 @@ var (
 var (
 	ErrNotificationNotFound         = New(CodeNotificationNotFound, "通知不存在")
 	ErrNotificationTemplateNotFound = New(CodeNotificationTemplateNotFound, "通知模板不存在")
+)
+
+
+// ============================================================================
+// 错误码：商家域 10001-10099
+// ============================================================================
+
+var (
+	ErrMerchantsNotFound            = New(CodeMerchantsNotFound, "商家不存在")
+	ErrMerchantBankAccountNotFound  = New(CodeMerchantBankAccountNotFound, "银行账户不存在")
+	ErrMerchantContactNotFound      = New(CodeMerchantContactNotFound, "联系人不存在")
+	ErrMerchantQualificationNotFound = New(CodeMerchantQualificationNotFound, "资质不存在")
+	ErrMerchantWithdrawalNotFound   = New(CodeMerchantWithdrawalNotFound, "提现记录不存在")
 )
