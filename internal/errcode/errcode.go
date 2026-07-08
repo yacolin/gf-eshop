@@ -82,6 +82,7 @@ const (
 	CodeMerchantContactNotFound      = 10003
 	CodeMerchantQualificationNotFound = 10004
 	CodeMerchantWithdrawalNotFound   = 10005
+	CodeReviewNotFound              = 10006
 )
 
 // ============================================================================
@@ -187,4 +188,5 @@ var (
 	ErrMerchantContactNotFound      = New(CodeMerchantContactNotFound, "联系人不存在")
 	ErrMerchantQualificationNotFound = New(CodeMerchantQualificationNotFound, "资质不存在")
 	ErrMerchantWithdrawalNotFound   = New(CodeMerchantWithdrawalNotFound, "提现记录不存在")
+	ErrReviewNotFound               = New(CodeReviewNotFound, "评价不存在")
 )

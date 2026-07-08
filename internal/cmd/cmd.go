@@ -57,6 +57,7 @@ import (
 	merchantQualificationsCtrl "gf-eshop/internal/controller/merchant_qualifications"
 	merchantWithdrawalsCtrl "gf-eshop/internal/controller/merchant_withdrawals"
 	merchantBalancesCtrl "gf-eshop/internal/controller/merchant_balances"
+	reviewsCtrl "gf-eshop/internal/controller/reviews"
 	"gf-eshop/internal/controller/merchants"
 	"gf-eshop/internal/service"
 	"gf-eshop/internal/ws"
@@ -131,6 +132,7 @@ var (
 					merchantBalancesCtrl.NewV1(),
 
 				dashboardCtrl.NewV1(),
+					reviewsCtrl.NewV1(),
 				)
 			group.Group("/", func(group *ghttp.RouterGroup) {
 				group.Middleware(authMiddleware)
