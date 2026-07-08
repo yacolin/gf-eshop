@@ -73,3 +73,11 @@ gfcli:
         jsonOmitEmpty: true
         descriptionTag: true
         noModelComment: true
+
+      - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
+        tables: "rev_reviews,rev_review_media,rev_review_replies,rev_review_audit_logs"
+        removePrefix: "rev_"
+        jsonCase: "Snake"
+        jsonOmitEmpty: true
+        descriptionTag: true
+        noModelComment: true
