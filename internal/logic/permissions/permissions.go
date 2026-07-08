@@ -2,6 +2,7 @@ package permissions
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gogf/gf/v2/database/gdb"
 
@@ -89,6 +90,27 @@ func (s *sPermissions) checkAdmin(ctx context.Context) error {
 	return nil
 }
 
+func (s *sPermissions) logAudit(ctx context.Context, operation, resource, resourceId, detail string, result int, err error) {
+	claims := utility.GetStaffClaims(ctx)
+	if claims == nil {
+		return
+	}
+	failureReason := ""
+	if err != nil {
+		failureReason = err.Error()
+	}
+	_ = service.OperationLogs().Log(ctx, &service.OperationLogInput{
+		StaffId:       claims.StaffId,
+		StaffName:     claims.RealName,
+		Operation:     operation,
+		Resource:      resource,
+		ResourceId:    resourceId,
+		Detail:        detail,
+		Result:        result,
+		FailureReason: failureReason,
+	})
+}
+
 func (s *sPermissions) Create(ctx context.Context, req *v1.PermissionCreateReq) (res *v1.PermissionCreateRes, err error) {
 	if err := s.checkAdmin(ctx); err != nil {
 		return nil, err
@@ -99,14 +121,17 @@ func (s *sPermissions) Create(ctx context.Context, req *v1.PermissionCreateReq) 
 		Description: req.Description,
 		Resource:    req.Resource,
 		Action:      req.Action,
+		ParentId:    req.ParentId,
 		Category:    req.Category,
 		SortOrder:   req.SortOrder,
 		Status:      req.Status,
 	})
 	if err != nil {
+		s.logAudit(ctx, "create", "permission", "", fmt.Sprintf("name=%s", req.Name), 0, err)
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
+	s.logAudit(ctx, "create", "permission", fmt.Sprintf("%d", id), fmt.Sprintf("name=%s", req.Name), 1, nil)
 	return &v1.PermissionCreateRes{Id: id}, nil
 }
 
@@ -119,6 +144,7 @@ func (s *sPermissions) Update(ctx context.Context, req *v1.PermissionUpdateReq) 
 		return nil, err
 	}
 	if count == 0 {
+		s.logAudit(ctx, "update", "permission", fmt.Sprintf("%d", req.Id), "not_found", 0, errcode.ErrPermissionNotFound)
 		return nil, errcode.ErrPermissionNotFound
 	}
 	_, err = dao.Permissions.Ctx(ctx).Data(do.Permissions{
@@ -127,13 +153,16 @@ func (s *sPermissions) Update(ctx context.Context, req *v1.PermissionUpdateReq) 
 		Description: req.Description,
 		Resource:    req.Resource,
 		Action:      req.Action,
+		ParentId:    req.ParentId,
 		Category:    req.Category,
 		SortOrder:   req.SortOrder,
 		Status:      req.Status,
 	}).Where(dao.Permissions.Columns().Id, req.Id).Update()
 	if err != nil {
+		s.logAudit(ctx, "update", "permission", fmt.Sprintf("%d", req.Id), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "update", "permission", fmt.Sprintf("%d", req.Id), "", 1, nil)
 	return &v1.PermissionUpdateRes{}, nil
 }
 
@@ -146,12 +175,15 @@ func (s *sPermissions) Delete(ctx context.Context, req *v1.PermissionDeleteReq) 
 		return nil, err
 	}
 	if count == 0 {
+		s.logAudit(ctx, "delete", "permission", fmt.Sprintf("%d", req.Id), "not_found", 0, errcode.ErrPermissionNotFound)
 		return nil, errcode.ErrPermissionNotFound
 	}
 	_, err = dao.Permissions.Ctx(ctx).Where(dao.Permissions.Columns().Id, req.Id).Delete()
 	if err != nil {
+		s.logAudit(ctx, "delete", "permission", fmt.Sprintf("%d", req.Id), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "delete", "permission", fmt.Sprintf("%d", req.Id), "", 1, nil)
 	return &v1.PermissionDeleteRes{}, nil
 }
 
@@ -196,6 +228,7 @@ func (s *sPermissions) RolePermissionUpdate(ctx context.Context, req *v1.RolePer
 		return nil, err
 	}
 	if roleCount == 0 {
+		s.logAudit(ctx, "update", "role_permission", fmt.Sprintf("%d", req.RoleId), "role_not_found", 0, errcode.ErrRoleNotFound)
 		return nil, errcode.ErrRoleNotFound
 	}
 	err = dao.RolePermissions.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
@@ -217,7 +250,10 @@ func (s *sPermissions) RolePermissionUpdate(ctx context.Context, req *v1.RolePer
 		return nil
 	})
 	if err != nil {
+		s.logAudit(ctx, "update", "role_permission", fmt.Sprintf("%d", req.RoleId), "", 0, err)
 		return nil, err
 	}
+	s.logAudit(ctx, "update", "role_permission", fmt.Sprintf("%d", req.RoleId),
+		fmt.Sprintf("permission_ids=%v", req.PermissionIds), 1, nil)
 	return &v1.RolePermissionUpdateRes{}, nil
 }

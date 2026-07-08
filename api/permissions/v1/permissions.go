@@ -35,6 +35,7 @@ type PermissionCreateReq struct {
 	Description string `json:"description"                           description:"描述"`
 	Resource    string `json:"resource"     v:"required|length:1,50"  description:"资源"`
 	Action      string `json:"action"       v:"required|length:1,50"  description:"操作"`
+	ParentId    int64  `json:"parent_id"    description:"父级ID（0=根节点）"`
 	Category    string `json:"category"                               description:"分类"`
 	SortOrder   int    `json:"sort_order"                             description:"排序"`
 	Status      int    `json:"status"                                 description:"状态"`
@@ -51,6 +52,7 @@ type PermissionUpdateReq struct {
 	Description string `json:"description"                    description:"描述"`
 	Resource    string `json:"resource"    v:"length:1,50"     description:"资源"`
 	Action      string `json:"action"      v:"length:1,50"     description:"操作"`
+	ParentId    int64  `json:"parent_id"   description:"父级ID（0=根节点）"`
 	Category    string `json:"category"                        description:"分类"`
 	SortOrder   int    `json:"sort_order"                      description:"排序"`
 	Status      int    `json:"status"                          description:"状态"`
