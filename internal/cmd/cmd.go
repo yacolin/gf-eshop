@@ -20,6 +20,7 @@ import (
 	wsCtrl "gf-eshop/internal/controller/ws"
 
 	"gf-eshop/internal/controller/attributes"
+	departmentsCtrl "gf-eshop/internal/controller/departments"
 	"gf-eshop/internal/controller/hello"
 	inventoriesCtrl "gf-eshop/internal/controller/inventories"
 	productVersionsCtrl "gf-eshop/internal/controller/product_versions"
@@ -35,6 +36,7 @@ import (
 	_ "gf-eshop/internal/logic/dashboard"
 	marketingLogic "gf-eshop/internal/logic/marketing"
 	merchantsLogic "gf-eshop/internal/logic/merchants"
+	departmentsLogic "gf-eshop/internal/logic/departments"
 	_ "gf-eshop/internal/logic/merchant_withdrawals"
 	_ "gf-eshop/internal/logic/merchant_balances"
 	marketingCtrl "gf-eshop/internal/controller/marketing"
@@ -83,14 +85,18 @@ var (
 					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
 						return productsLogic.Warmup(ctx)
 					}),
-				productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
-					marketingLogic.Warmup(ctx)
-					return 0, nil
-				}),
-				productsLogic.NewFuncStage("merchants", func(ctx context.Context) (int, error) {
-					merchantsLogic.Warmup(ctx)
-					return 0, nil
-				}),
+					productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
+						marketingLogic.Warmup(ctx)
+						return 0, nil
+					}),
+					productsLogic.NewFuncStage("merchants", func(ctx context.Context) (int, error) {
+						merchantsLogic.Warmup(ctx)
+						return 0, nil
+					}),
+					productsLogic.NewFuncStage("departments", func(ctx context.Context) (int, error) {
+						departmentsLogic.Warmup(ctx)
+						return 0, nil
+					}),
 			)
 				pipeline.Run(ctx)
 				// 启动仪表盘定时刷新
@@ -138,6 +144,7 @@ var (
 				group.Middleware(authMiddleware)
 				group.Bind(
 					staffCtrl.NewV1(),
+						departmentsCtrl.NewV1(),
 					permissions.NewV1(),
 					notification.NewV1(),
 					wsCtrl.NewV1(),
