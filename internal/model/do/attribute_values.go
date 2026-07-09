@@ -15,6 +15,8 @@ type AttributeValues struct {
 	Id           interface{} //
 	AttributeId  interface{} // 关联属性ID
 	Value        interface{} // 属性值（如：256G、红色）
+	Alias        interface{} // 别名列表，如["深空灰","黑灰"]，用于搜索纠错、模糊匹配
+	SearchWeight interface{} // 搜索权重（值越大匹配优先级越高）
 	NumericValue interface{} // 数值型值（用于区间筛选）
 	ColorHex     interface{} // 颜色色值（#FF0000）
 	SortOrder    interface{} // 排序权重

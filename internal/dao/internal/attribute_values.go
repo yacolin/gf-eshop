@@ -23,6 +23,8 @@ type AttributeValuesColumns struct {
 	Id           string //
 	AttributeId  string // 关联属性ID
 	Value        string // 属性值（如：256G、红色）
+	Alias        string // 别名列表，如["深空灰","黑灰"]，用于搜索纠错、模糊匹配
+	SearchWeight string // 搜索权重（值越大匹配优先级越高）
 	NumericValue string // 数值型值（用于区间筛选）
 	ColorHex     string // 颜色色值（#FF0000）
 	SortOrder    string // 排序权重
@@ -35,6 +37,8 @@ var attributeValuesColumns = AttributeValuesColumns{
 	Id:           "id",
 	AttributeId:  "attribute_id",
 	Value:        "value",
+	Alias:        "alias",
+	SearchWeight: "search_weight",
 	NumericValue: "numeric_value",
 	ColorHex:     "color_hex",
 	SortOrder:    "sort_order",

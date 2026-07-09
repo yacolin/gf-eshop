@@ -12,7 +12,7 @@ import (
 type Attributes struct {
 	Id         int64       `json:"id"          description:""`
 	Name       string      `json:"name"        description:"属性名称（如：处理器、屏幕尺寸）"`
-	CategoryId int64       `json:"category_id" description:"所属类目ID（该属性只出现在这个类目下）"`
+	CategoryId int64       `json:"category_id" description:"推荐归属类目（非强约束，仅用于后台管理视图）"`
 	ValueType  int         `json:"value_type"  description:"1-文本 2-数值 3-颜色"`
 	Filterable int         `json:"filterable"  description:"是否参与前台筛选"`
 	Unit       string      `json:"unit"        description:"单位（如：英寸、GB）"`

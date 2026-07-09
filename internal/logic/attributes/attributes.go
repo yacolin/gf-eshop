@@ -75,9 +75,8 @@ func (s *sAttributes) Detail(ctx context.Context, req *v1.AttributesDetailReq) (
 }
 
 func (s *sAttributes) Create(ctx context.Context, req *v1.AttributesCreateReq) (res *v1.AttributesCreateRes, err error) {
-	result, err := dao.Attributes.Ctx(ctx).Insert(do.Attributes{
+	data := do.Attributes{
 		Name:       req.Name,
-		CategoryId: req.CategoryId,
 		ValueType:  req.ValueType,
 		Filterable: req.Filterable,
 		Unit:       req.Unit,
@@ -86,7 +85,11 @@ func (s *sAttributes) Create(ctx context.Context, req *v1.AttributesCreateReq) (
 		IsSkuSpec:  req.IsSkuSpec,
 		SortOrder:  req.SortOrder,
 		Status:     req.Status,
-	})
+	}
+	if req.CategoryId > 0 {
+		data.CategoryId = req.CategoryId
+	}
+	result, err := dao.Attributes.Ctx(ctx).Insert(data)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +106,8 @@ func (s *sAttributes) Update(ctx context.Context, req *v1.AttributesUpdateReq) (
 		return nil, errcode.ErrAttributeNotFound
 	}
 
-	_, err = dao.Attributes.Ctx(ctx).Data(do.Attributes{
+	data := do.Attributes{
 		Name:       req.Name,
-		CategoryId: req.CategoryId,
 		ValueType:  req.ValueType,
 		Filterable: req.Filterable,
 		Unit:       req.Unit,
@@ -114,7 +116,11 @@ func (s *sAttributes) Update(ctx context.Context, req *v1.AttributesUpdateReq) (
 		IsSkuSpec:  req.IsSkuSpec,
 		SortOrder:  req.SortOrder,
 		Status:     req.Status,
-	}).Where(dao.Attributes.Columns().Id, req.Id).Update()
+	}
+	if req.CategoryId > 0 {
+		data.CategoryId = req.CategoryId
+	}
+	_, err = dao.Attributes.Ctx(ctx).Data(data).Where(dao.Attributes.Columns().Id, req.Id).Update()
 	if err != nil {
 		return nil, err
 	}

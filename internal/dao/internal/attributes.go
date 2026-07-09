@@ -22,7 +22,7 @@ type AttributesDao struct {
 type AttributesColumns struct {
 	Id         string //
 	Name       string // 属性名称（如：处理器、屏幕尺寸）
-	CategoryId string // 所属类目ID（该属性只出现在这个类目下）
+	CategoryId string // 推荐归属类目（非强约束，仅用于后台管理视图）
 	ValueType  string // 1-文本 2-数值 3-颜色
 	Filterable string // 是否参与前台筛选
 	Unit       string // 单位（如：英寸、GB）

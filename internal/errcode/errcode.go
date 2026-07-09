@@ -61,6 +61,7 @@ const (
 	CodeBrandNotFound       = 4001
 	CodeCategoryNotFound    = 4010
 	CodeAttributeNotFound   = 4020
+	CodeAttributeValueNotFound = 4021
 	CodeProductNotFound     = 4030
 	CodeSKUNotFound              = 4031
 	CodeProductVersionNotFound   = 4032
@@ -126,6 +127,7 @@ var (
 	ErrBrandNotFound    = New(CodeBrandNotFound, "品牌不存在")
 	ErrCategoryNotFound = New(CodeCategoryNotFound, "类目不存在")
 	ErrAttributeNotFound = New(CodeAttributeNotFound, "属性不存在")
+	ErrAttributeValueNotFound = New(CodeAttributeValueNotFound, "属性值不存在")
 	ErrProductNotFound           = New(CodeProductNotFound, "产品不存在")
 	ErrSKUNotFound               = New(CodeSKUNotFound, "SKU 不存在")
 	ErrProductVersionNotFound    = New(CodeProductVersionNotFound, "商品版本不存在")

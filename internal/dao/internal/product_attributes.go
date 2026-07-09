@@ -20,26 +20,28 @@ type ProductAttributesDao struct {
 
 // ProductAttributesColumns defines and stores column names for table sp_product_attributes.
 type ProductAttributesColumns struct {
-	Id          string //
-	ProductId   string // 关联 products.id
-	AttributeId string // 关联 attributes.id
-	Value       string // 属性值（如：A16）
-	SortOrder   string // 排序权重（越小越靠前，用于控制前台展示顺序）
-	CreatedAt   string //
-	UpdatedAt   string //
-	DeletedAt   string // 软删除
+	Id               string //
+	ProductId        string // 关联 products.id
+	AttributeId      string // 关联 attributes.id
+	AttributeValueId string // 引用属性值字典ID（可选，关联 attribute_values.id）
+	Value            string // 属性值（如：A16）。有字典值时冗余存储便于展示，无字典值时存自由文本
+	SortOrder        string // 排序权重（越小越靠前，用于控制前台展示顺序）
+	CreatedAt        string //
+	UpdatedAt        string //
+	DeletedAt        string // 软删除
 }
 
 // productAttributesColumns holds the columns for table sp_product_attributes.
 var productAttributesColumns = ProductAttributesColumns{
-	Id:          "id",
-	ProductId:   "product_id",
-	AttributeId: "attribute_id",
-	Value:       "value",
-	SortOrder:   "sort_order",
-	CreatedAt:   "created_at",
-	UpdatedAt:   "updated_at",
-	DeletedAt:   "deleted_at",
+	Id:               "id",
+	ProductId:        "product_id",
+	AttributeId:      "attribute_id",
+	AttributeValueId: "attribute_value_id",
+	Value:            "value",
+	SortOrder:        "sort_order",
+	CreatedAt:        "created_at",
+	UpdatedAt:        "updated_at",
+	DeletedAt:        "deleted_at",
 }
 
 // NewProductAttributesDao creates and returns a new DAO object for table data access.

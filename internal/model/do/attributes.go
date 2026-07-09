@@ -14,7 +14,7 @@ type Attributes struct {
 	g.Meta     `orm:"table:sp_attributes, do:true"`
 	Id         interface{} //
 	Name       interface{} // 属性名称（如：处理器、屏幕尺寸）
-	CategoryId interface{} // 所属类目ID（该属性只出现在这个类目下）
+	CategoryId interface{} // 推荐归属类目（非强约束，仅用于后台管理视图）
 	ValueType  interface{} // 1-文本 2-数值 3-颜色
 	Filterable interface{} // 是否参与前台筛选
 	Unit       interface{} // 单位（如：英寸、GB）

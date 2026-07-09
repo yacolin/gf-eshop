@@ -12,6 +12,7 @@ import (
 
 	"gf-eshop/internal/controller/brands"
 	"gf-eshop/internal/controller/categories"
+	categoryAttributesCtrl "gf-eshop/internal/controller/category_attributes"
 	categoryBrands "gf-eshop/internal/controller/category_brands"
 	"gf-eshop/internal/controller/permissions"
 	"gf-eshop/internal/controller/notification"
@@ -19,7 +20,8 @@ import (
 	staffCtrl "gf-eshop/internal/controller/staff"
 	wsCtrl "gf-eshop/internal/controller/ws"
 
-	"gf-eshop/internal/controller/attributes"
+	attributesCtrl "gf-eshop/internal/controller/attributes"
+	attributeValuesCtrl "gf-eshop/internal/controller/attribute_values"
 	departmentsCtrl "gf-eshop/internal/controller/departments"
 	"gf-eshop/internal/controller/hello"
 	inventoriesCtrl "gf-eshop/internal/controller/inventories"
@@ -124,7 +126,9 @@ var (
 					categoryBrands.NewV1(),
 					productsCtrl.NewV1(),
 					skusCtrl.NewV1(),
-					attributes.NewV1(),
+					attributesCtrl.NewV1(),
+					attributeValuesCtrl.NewV1(),
+					categoryAttributesCtrl.NewV1(),
 					productAttributesCtrl.NewV1(),
 					productDescriptionsCtrl.NewV1(),
 					inventoriesCtrl.NewV1(),

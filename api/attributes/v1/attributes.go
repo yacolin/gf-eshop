@@ -32,7 +32,7 @@ type AttributesCreateReq struct {
 	g.Meta `path:"/attributes" tags:"Attributes" method:"post" summary:"新增属性"`
 
 	Name       string `json:"name"        v:"required|length:1,100" description:"属性名称"`
-	CategoryId int64  `json:"category_id" v:"required"              description:"所属类目ID"`
+	CategoryId int64  `json:"category_id" description:"推荐归属类目ID（非强约束）"`
 	ValueType  int    `json:"value_type"  v:"required|in:1,2,3"     description:"值类型(1-文本 2-数值 3-颜色)"`
 	Filterable int    `json:"filterable"  description:"是否参与前台筛选"`
 	Unit       string `json:"unit"        description:"单位"`

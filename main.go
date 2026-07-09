@@ -13,6 +13,8 @@ import (
 	_ "gf-eshop/internal/logic/category_brands"
 	_ "gf-eshop/internal/logic/products"
 	_ "gf-eshop/internal/logic/attributes"
+	_ "gf-eshop/internal/logic/attribute_values"
+	_ "gf-eshop/internal/logic/category_attributes"
 	_ "gf-eshop/internal/logic/inventories"
 	_ "gf-eshop/internal/logic/inventory_logs"
 	_ "gf-eshop/internal/logic/product_attributes"

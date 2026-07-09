@@ -57,11 +57,15 @@ func (s *sProductAttributes) List(ctx context.Context, req *v1.ProductAttributes
 }
 
 func (s *sProductAttributes) Create(ctx context.Context, req *v1.ProductAttributesCreateReq) (res *v1.ProductAttributesCreateRes, err error) {
-	result, err := dao.ProductAttributes.Ctx(ctx).Insert(do.ProductAttributes{
+	data := do.ProductAttributes{
 		ProductId:   req.ProductId,
 		AttributeId: req.AttributeId,
 		Value:       req.Value,
-	})
+	}
+	if req.AttributeValueId > 0 {
+		data.AttributeValueId = req.AttributeValueId
+	}
+	result, err := dao.ProductAttributes.Ctx(ctx).Insert(data)
 	if err != nil {
 		return nil, err
 	}

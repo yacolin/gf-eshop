@@ -21,9 +21,10 @@ type ProductAttributesListRes struct {
 type ProductAttributesCreateReq struct {
 	g.Meta `path:"/product_attributes" tags:"ProductAttributes" method:"post" summary:"新增商品属性值"`
 
-	ProductId   int64  `json:"product_id"   v:"required" description:"商品ID"`
-	AttributeId int64  `json:"attribute_id" v:"required" description:"属性ID"`
-	Value       string `json:"value"        v:"required" description:"属性值"`
+	ProductId        int64  `json:"product_id"         v:"required" description:"商品ID"`
+	AttributeId      int64  `json:"attribute_id"       v:"required" description:"属性ID"`
+	AttributeValueId int64  `json:"attribute_value_id"               description:"引用属性值字典ID（可选），优先使用"`
+	Value            string `json:"value"              v:"required" description:"属性值。有字典值时冗余存储展示文本，无字典值时存自由文本"`
 }
 type ProductAttributesCreateRes struct {
 	Id int64 `json:"id"`
