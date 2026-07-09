@@ -21,6 +21,7 @@ type PromotionsDao struct {
 // PromotionsColumns defines and stores column names for table mkt_promotions.
 type PromotionsColumns struct {
 	Id            string // 促销ID
+	PromotionNo   string // 促销业务编号
 	MerchantId    string // 所属商家ID（0表示平台级活动）
 	PromoName     string // 活动名称
 	PromoType     string // 1-满减券 2-折扣券 3-秒杀 4-满额减 5-满件折 6-会员价
@@ -29,19 +30,21 @@ type PromotionsColumns struct {
 	EndTime       string // 结束时间
 	TotalQuantity string // 发行总量（0表示不限）
 	PerUserLimit  string // 每人限领/限购数量
-	UsedQuantity  string // 已使用/已售数量
-	RuleId        string // 关联规则表（mkt_promotion_rules）
-	Status        string // 1-草稿 2-生效中 3-已结束 4-已作废
+	UsedQuantity  string // 已使用/已售数量（异步统计，非实时）
+	RuleId        string // 关联规则表ID
+	Status        string // 1-草稿 2-待生效 3-生效中 4-已暂停 5-已结束 6-已作废
+	Priority      string // 优先级（数字越大越优先，同类型互斥）
 	CreatedBy     string // 创建人
 	UpdatedBy     string // 更新人
-	CreatedAt     string // 创建时间
-	UpdatedAt     string // 更新时间
-	DeletedAt     string // 软删除时间
+	CreatedAt     string //
+	UpdatedAt     string //
+	DeletedAt     string //
 }
 
 // promotionsColumns holds the columns for table mkt_promotions.
 var promotionsColumns = PromotionsColumns{
 	Id:            "id",
+	PromotionNo:   "promotion_no",
 	MerchantId:    "merchant_id",
 	PromoName:     "promo_name",
 	PromoType:     "promo_type",
@@ -53,6 +56,7 @@ var promotionsColumns = PromotionsColumns{
 	UsedQuantity:  "used_quantity",
 	RuleId:        "rule_id",
 	Status:        "status",
+	Priority:      "priority",
 	CreatedBy:     "created_by",
 	UpdatedBy:     "updated_by",
 	CreatedAt:     "created_at",

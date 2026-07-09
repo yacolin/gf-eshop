@@ -20,28 +20,26 @@ type PromotionUsageLogsDao struct {
 
 // PromotionUsageLogsColumns defines and stores column names for table mkt_promotion_usage_logs.
 type PromotionUsageLogsColumns struct {
-	Id              string // 主键ID
-	PromotionId     string // 促销ID
-	UserPromotionId string // 用户促销资产ID
-	UserId          string // 用户ID
-	MerchantId      string // 所属商家ID
-	OrderId         string // 使用的订单ID
-	UsageType       string // 1-下单使用 2-自动优惠
-	DiscountAmount  string // 优惠金额（分）
-	CreatedAt       string //
+	Id                string // 主键ID
+	PromotionId       string // 促销ID
+	UserPromotionId   string // 用户促销资产ID
+	UserId            string // 用户ID
+	OrderId           string // 使用的订单ID
+	DiscountAmount    string // 优惠金额（分）
+	PromotionSnapshot string // 优惠快照（名称、规则等）
+	CreatedAt         string //
 }
 
 // promotionUsageLogsColumns holds the columns for table mkt_promotion_usage_logs.
 var promotionUsageLogsColumns = PromotionUsageLogsColumns{
-	Id:              "id",
-	PromotionId:     "promotion_id",
-	UserPromotionId: "user_promotion_id",
-	UserId:          "user_id",
-	MerchantId:      "merchant_id",
-	OrderId:         "order_id",
-	UsageType:       "usage_type",
-	DiscountAmount:  "discount_amount",
-	CreatedAt:       "created_at",
+	Id:                "id",
+	PromotionId:       "promotion_id",
+	UserPromotionId:   "user_promotion_id",
+	UserId:            "user_id",
+	OrderId:           "order_id",
+	DiscountAmount:    "discount_amount",
+	PromotionSnapshot: "promotion_snapshot",
+	CreatedAt:         "created_at",
 }
 
 // NewPromotionUsageLogsDao creates and returns a new DAO object for table data access.

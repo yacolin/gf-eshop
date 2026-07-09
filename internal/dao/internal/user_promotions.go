@@ -26,16 +26,15 @@ type UserPromotionsColumns struct {
 	PromotionId     string // 促销ID
 	MerchantId      string // 所属商家ID
 	AcquireTime     string // 领取时间
-	ExpireTime      string // 过期时间（优惠券必填）
-	Status          string // 1-未使用 2-已使用 3-已过期 4-已作废
+	ExpireTime      string // 过期时间
+	Status          string // 1-未使用 2-锁定中(下单未付) 3-已使用 4-已过期 5-已作废
+	LockOrderId     string // 锁定的订单ID（用于回滚）
 	UsedTime        string // 使用时间
-	OrderId         string // 使用的订单ID
+	OrderId         string // 最终使用的订单ID
 	QueueToken      string // 秒杀排队令牌
-	CreatedBy       string // 创建人
-	UpdatedBy       string // 更新人
-	CreatedAt       string // 创建时间
-	UpdatedAt       string // 更新时间
-	DeletedAt       string // 软删除时间
+	CreatedAt       string //
+	UpdatedAt       string //
+	DeletedAt       string //
 }
 
 // userPromotionsColumns holds the columns for table mkt_user_promotions.
@@ -48,11 +47,10 @@ var userPromotionsColumns = UserPromotionsColumns{
 	AcquireTime:     "acquire_time",
 	ExpireTime:      "expire_time",
 	Status:          "status",
+	LockOrderId:     "lock_order_id",
 	UsedTime:        "used_time",
 	OrderId:         "order_id",
 	QueueToken:      "queue_token",
-	CreatedBy:       "created_by",
-	UpdatedBy:       "updated_by",
 	CreatedAt:       "created_at",
 	UpdatedAt:       "updated_at",
 	DeletedAt:       "deleted_at",

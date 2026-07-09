@@ -13,6 +13,7 @@ import (
 type Promotions struct {
 	g.Meta        `orm:"table:mkt_promotions, do:true"`
 	Id            interface{} // 促销ID
+	PromotionNo   interface{} // 促销业务编号
 	MerchantId    interface{} // 所属商家ID（0表示平台级活动）
 	PromoName     interface{} // 活动名称
 	PromoType     interface{} // 1-满减券 2-折扣券 3-秒杀 4-满额减 5-满件折 6-会员价
@@ -21,12 +22,13 @@ type Promotions struct {
 	EndTime       *gtime.Time // 结束时间
 	TotalQuantity interface{} // 发行总量（0表示不限）
 	PerUserLimit  interface{} // 每人限领/限购数量
-	UsedQuantity  interface{} // 已使用/已售数量
-	RuleId        interface{} // 关联规则表（mkt_promotion_rules）
-	Status        interface{} // 1-草稿 2-生效中 3-已结束 4-已作废
+	UsedQuantity  interface{} // 已使用/已售数量（异步统计，非实时）
+	RuleId        interface{} // 关联规则表ID
+	Status        interface{} // 1-草稿 2-待生效 3-生效中 4-已暂停 5-已结束 6-已作废
+	Priority      interface{} // 优先级（数字越大越优先，同类型互斥）
 	CreatedBy     interface{} // 创建人
 	UpdatedBy     interface{} // 更新人
-	CreatedAt     *gtime.Time // 创建时间
-	UpdatedAt     *gtime.Time // 更新时间
-	DeletedAt     *gtime.Time // 软删除时间
+	CreatedAt     *gtime.Time //
+	UpdatedAt     *gtime.Time //
+	DeletedAt     *gtime.Time //
 }

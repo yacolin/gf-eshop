@@ -2,6 +2,7 @@ package marketing
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -177,8 +178,8 @@ func (s *sMarketing) enrichProducts(ctx context.Context, products []*entity.Prom
 
 	spuIDs := make([]int64, 0, len(products))
 	for _, pp := range products {
-		if pp.ProductType == 3 && pp.ProductId > 0 {
-			spuIDs = append(spuIDs, pp.ProductId)
+		if pp.ProductType == 3 && pp.TargetId > 0 {
+			spuIDs = append(spuIDs, pp.TargetId)
 		}
 	}
 
@@ -198,16 +199,13 @@ func (s *sMarketing) enrichProducts(ctx context.Context, products []*entity.Prom
 		item := &v1.PromotionProductItem{
 			Id:          pp.Id,
 			ProductType: pp.ProductType,
-			ProductId:   pp.ProductId,
-			CategoryId:  pp.CategoryId,
+			ProductId:   pp.TargetId,
 		}
-		if spu, ok := spuMap[pp.ProductId]; ok {
+		if spu, ok := spuMap[pp.TargetId]; ok {
 			item.SpuName = spu.Name
 			item.Subtitle = spu.Subtitle
 			item.MainImage = spu.MainImage
 			item.Unit = spu.Unit
-			item.MinPrice = spu.MinPrice
-			item.MaxPrice = spu.MaxPrice
 			item.SalesCount = spu.SalesCount
 			item.SpuStatus = spu.Status
 		}
@@ -256,10 +254,9 @@ func (s *sMarketing) PromotionCreate(ctx context.Context, req *v1.PromotionCreat
 				RuleName:       req.RuleName,
 				ConditionType:  req.ConditionType,
 				ConditionValue: req.ConditionValue,
-				BenefitType:    req.BenefitType,
-				BenefitValue:   req.BenefitValue,
+				BenefitConfig:  benefitConfigJSON(req.BenefitType, req.BenefitValue),
 				IsStackable:    req.IsStackable,
-				StackPriority:  req.StackPriority,
+				StackGroup:     req.StackPriority,
 				CreatedBy:      userID,
 				UpdatedBy:      userID,
 			}).Insert()
@@ -281,7 +278,7 @@ func (s *sMarketing) PromotionCreate(ctx context.Context, req *v1.PromotionCreat
 				_, err = tx.Model(pp).Data(do.PromotionProducts{
 					PromotionId: promoID,
 					ProductType: 3,
-					ProductId:   pid,
+					TargetId:    pid,
 				}).Insert()
 				if err != nil {
 					return err
@@ -353,10 +350,9 @@ func (s *sMarketing) PromotionUpdate(ctx context.Context, req *v1.PromotionUpdat
 			ruleUpdates["condition_type"] = req.ConditionType
 		}
 		ruleUpdates["condition_value"] = req.ConditionValue
-		ruleUpdates["benefit_type"] = req.BenefitType
-		ruleUpdates["benefit_value"] = req.BenefitValue
+		ruleUpdates["benefit_config"] = benefitConfigJSON(req.BenefitType, req.BenefitValue)
 		if req.StackPriority > 0 {
-			ruleUpdates["stack_priority"] = req.StackPriority
+			ruleUpdates["stack_group"] = req.StackPriority
 		}
 		_, err = dao.PromotionRules.Ctx(ctx).
 			Data(ruleUpdates).
@@ -418,4 +414,17 @@ func promoCodeOrNil(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+type benefitCfg struct {
+	Type  int   `json:"type"`
+	Value int64 `json:"value"`
+}
+
+func benefitConfigJSON(benefitType int, benefitValue int64) string {
+	if benefitType == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(benefitCfg{Type: benefitType, Value: benefitValue})
+	return string(b)
 }

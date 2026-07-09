@@ -18,14 +18,13 @@ type UserPromotions struct {
 	PromotionId     interface{} // 促销ID
 	MerchantId      interface{} // 所属商家ID
 	AcquireTime     *gtime.Time // 领取时间
-	ExpireTime      *gtime.Time // 过期时间（优惠券必填）
-	Status          interface{} // 1-未使用 2-已使用 3-已过期 4-已作废
+	ExpireTime      *gtime.Time // 过期时间
+	Status          interface{} // 1-未使用 2-锁定中(下单未付) 3-已使用 4-已过期 5-已作废
+	LockOrderId     interface{} // 锁定的订单ID（用于回滚）
 	UsedTime        *gtime.Time // 使用时间
-	OrderId         interface{} // 使用的订单ID
+	OrderId         interface{} // 最终使用的订单ID
 	QueueToken      interface{} // 秒杀排队令牌
-	CreatedBy       interface{} // 创建人
-	UpdatedBy       interface{} // 更新人
-	CreatedAt       *gtime.Time // 创建时间
-	UpdatedAt       *gtime.Time // 更新时间
-	DeletedAt       *gtime.Time // 软删除时间
+	CreatedAt       *gtime.Time //
+	UpdatedAt       *gtime.Time //
+	DeletedAt       *gtime.Time //
 }

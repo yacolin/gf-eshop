@@ -10,13 +10,10 @@ type PromotionProductItem struct {
 	Id          int64  `json:"id"`
 	ProductType int    `json:"product_type"`
 	ProductId   int64  `json:"product_id"`
-	CategoryId  int64  `json:"category_id"`
 	SpuName     string `json:"spu_name"`
 	Subtitle    string `json:"subtitle"`
 	MainImage   string `json:"main_image"`
 	Unit        string `json:"unit"`
-	MinPrice    int64  `json:"min_price"`
-	MaxPrice    int64  `json:"max_price"`
 	SalesCount  int    `json:"sales_count"`
 	SpuStatus   int    `json:"spu_status"`
 }

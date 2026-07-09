@@ -16,8 +16,7 @@ type PromotionProducts struct {
 	PromotionId interface{} // 促销ID
 	MerchantId  interface{} // 所属商家ID
 	ProductType interface{} // 1-全站 2-指定分类 3-指定SPU 4-指定SKU
-	ProductId   interface{} // 产品ID（product_type=3/4时使用）
-	CategoryId  interface{} // 分类ID（product_type=2时使用）
+	TargetId    interface{} // 目标ID（SPU_ID或SKU_ID或Category_ID）
 	CreatedAt   *gtime.Time //
 	DeletedAt   *gtime.Time //
 }

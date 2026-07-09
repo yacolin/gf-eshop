@@ -24,8 +24,7 @@ type PromotionProductsColumns struct {
 	PromotionId string // 促销ID
 	MerchantId  string // 所属商家ID
 	ProductType string // 1-全站 2-指定分类 3-指定SPU 4-指定SKU
-	ProductId   string // 产品ID（product_type=3/4时使用）
-	CategoryId  string // 分类ID（product_type=2时使用）
+	TargetId    string // 目标ID（SPU_ID或SKU_ID或Category_ID）
 	CreatedAt   string //
 	DeletedAt   string //
 }
@@ -36,8 +35,7 @@ var promotionProductsColumns = PromotionProductsColumns{
 	PromotionId: "promotion_id",
 	MerchantId:  "merchant_id",
 	ProductType: "product_type",
-	ProductId:   "product_id",
-	CategoryId:  "category_id",
+	TargetId:    "target_id",
 	CreatedAt:   "created_at",
 	DeletedAt:   "deleted_at",
 }

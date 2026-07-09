@@ -22,19 +22,18 @@ type PromotionRulesDao struct {
 type PromotionRulesColumns struct {
 	Id             string // 规则ID
 	PromotionId    string // 所属促销ID
-	MerchantId     string // 所属商家ID（0表示平台级规则）
-	RuleName       string // 规则名称（便于理解）
+	MerchantId     string // 所属商家ID
+	RuleName       string // 规则名称
 	ConditionType  string // 1-无门槛 2-满金额 3-满件数 4-指定用户等级
-	ConditionValue string // 门槛值（分，满20000则存20000）
-	BenefitType    string // 1-减固定金额 2-打折扣 3-赠品 4-免运费 5-送积分
-	BenefitValue   string // 优惠值（减固定金额填分如3000；打折扣填千分比如800=8折）
+	ConditionValue string // 门槛值（分）
+	BenefitConfig  string // 优惠配置JSON。例：{"type":1,"value":3000} 或 {"type":2,"steps":[{"limit":10000,"rate":900},{"limit":20000,"rate":800}]}
 	IsStackable    string // 是否可与其他促销叠加 0-否 1-是
-	StackPriority  string // 叠加优先级（数字越小越优先计算）
+	StackGroup     string // 叠加组ID（同组内互斥，不同组可叠加）
 	CreatedBy      string // 创建人
 	UpdatedBy      string // 更新人
-	CreatedAt      string // 创建时间
-	UpdatedAt      string // 更新时间
-	DeletedAt      string // 软删除时间
+	CreatedAt      string //
+	UpdatedAt      string //
+	DeletedAt      string //
 }
 
 // promotionRulesColumns holds the columns for table mkt_promotion_rules.
@@ -45,10 +44,9 @@ var promotionRulesColumns = PromotionRulesColumns{
 	RuleName:       "rule_name",
 	ConditionType:  "condition_type",
 	ConditionValue: "condition_value",
-	BenefitType:    "benefit_type",
-	BenefitValue:   "benefit_value",
+	BenefitConfig:  "benefit_config",
 	IsStackable:    "is_stackable",
-	StackPriority:  "stack_priority",
+	StackGroup:     "stack_group",
 	CreatedBy:      "created_by",
 	UpdatedBy:      "updated_by",
 	CreatedAt:      "created_at",
