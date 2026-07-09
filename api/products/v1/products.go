@@ -63,10 +63,17 @@ type ProductsListReq struct {
 	PriceMin   int64  `json:"price_min"`
 	PriceMax   int64  `json:"price_max"`
 }
+type ProductsListItem struct {
+	*entity.Products
+	PriceMin   int64 `json:"price_min"   description:"最低销售价(分)"`
+	PriceMax   int64 `json:"price_max"   description:"最高销售价(分)"`
+	TotalStock int64 `json:"total_stock" description:"总库存（可售）"`
+}
+
 type ProductsListRes struct {
-	List    []*entity.Products `json:"list"`
-	Cursor  string             `json:"cursor"`
-	HasMore bool               `json:"has_more"`
+	List    []*ProductsListItem `json:"list"`
+	Cursor  string              `json:"cursor"`
+	HasMore bool                `json:"has_more"`
 }
 
 type ProductsDetailReq struct {
@@ -86,11 +93,19 @@ type SkuDetailItem struct {
 	InventoryStatus   string `json:"inventory_status,omitempty"`
 }
 
+type ProductSpecResponse struct {
+	Selectable    []ProductAttrDetailResponse `json:"selectable"     description:"可选的规格（驱动SKU选择器，如颜色、内存）"`
+	NonSelectable []ProductAttrDetailResponse `json:"non_selectable" description:"不可选的规格（仅展示，如处理器、屏幕尺寸）"`
+}
+
 type ProductsDetailRes struct {
 	*entity.Products
-	Attributes  []ProductAttrDetailResponse `json:"attributes"`
-	Description *entity.ProductDescriptions `json:"description,omitempty"`
-	SKUs        []*SkuDetailItem            `json:"skus"`
+	PriceMin    int64                        `json:"price_min"   description:"最低销售价(分)"`
+	PriceMax    int64                        `json:"price_max"   description:"最高销售价(分)"`
+	TotalStock  int64                        `json:"total_stock" description:"总库存（可售）"`
+	Description *entity.ProductDescriptions  `json:"description,omitempty"`
+	SKUs        []*SkuDetailItem             `json:"skus"`
+	Specs       *ProductSpecResponse         `json:"specs"`
 }
 
 type ProductsDetailPureReq struct {

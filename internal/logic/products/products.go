@@ -86,7 +86,7 @@ func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, c
 		return nil, err
 	}
 	if len(ids) == 0 {
-		return &v1.ProductsListRes{List: make([]*entity.Products, 0)}, nil
+		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
 	}
 
 	hasMore := len(ids) > size
@@ -95,18 +95,32 @@ func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, c
 	}
 
 	// 按 ID 取完整实体
-	var list []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
+	var products []*entity.Products
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&products)
 	if err != nil {
 		return nil, err
 	}
+	if products == nil {
+		products = make([]*entity.Products, 0)
+	}
+
+	// 聚合价格&库存
+	stats := enrichProductStats(ctx, ids)
+
+	list := make([]*v1.ProductsListItem, len(products))
+	for i, p := range products {
+		s := stats[p.Id]
+		list[i] = &v1.ProductsListItem{
+			Products:   p,
+			PriceMin:   s.PriceMin,
+			PriceMax:   s.PriceMax,
+			TotalStock: s.TotalStock,
+		}
+	}
 
 	cursor := ""
-	if len(list) > 0 {
-		cursor = base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(list[len(list)-1].Id, 10)))
-	}
-	if list == nil {
-		list = make([]*entity.Products, 0)
+	if len(products) > 0 {
+		cursor = base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(products[len(products)-1].Id, 10)))
 	}
 	return &v1.ProductsListRes{List: list, Cursor: cursor, HasMore: hasMore}, nil
 }
@@ -146,7 +160,7 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 		ids[i] = v.Int64()
 	}
 	if len(ids) == 0 {
-		return &v1.ProductsListRes{List: make([]*entity.Products, 0)}, nil
+		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
 	}
 
 	hasMore := len(ids) > size
@@ -154,18 +168,32 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 		ids = ids[:size]
 	}
 
-	var list []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&list)
+	var products []*entity.Products
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&products)
 	if err != nil {
 		return nil, err
 	}
+	if products == nil {
+		products = make([]*entity.Products, 0)
+	}
+
+	// 聚合价格&库存
+	stats := enrichProductStats(ctx, ids)
+
+	list := make([]*v1.ProductsListItem, len(products))
+	for i, p := range products {
+		s := stats[p.Id]
+		list[i] = &v1.ProductsListItem{
+			Products:   p,
+			PriceMin:   s.PriceMin,
+			PriceMax:   s.PriceMax,
+			TotalStock: s.TotalStock,
+		}
+	}
 
 	cursor := ""
-	if len(list) > 0 {
-		cursor = base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(list[len(list)-1].Id, 10)))
-	}
-	if list == nil {
-		list = make([]*entity.Products, 0)
+	if len(products) > 0 {
+		cursor = base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(products[len(products)-1].Id, 10)))
 	}
 	return &v1.ProductsListRes{List: list, Cursor: cursor, HasMore: hasMore}, nil
 }
@@ -267,17 +295,77 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 	// 从 sku_specs EAV 表聚合规格维度
 	specAttrs := aggregateSpecAttrs(ctx, skuEntities)
 
-	// 合并 SKU 规格维度 + 商品属性，补充 attribute_id
-	mergedAttrs := mergeAttrs(specAttrs, productAttrs, product.CategoryId, ctx)
-	if mergedAttrs == nil {
-		mergedAttrs = make([]v1.ProductAttrDetailResponse, 0)
+	// 聚合商品级价格&库存
+	var priceMin, priceMax, totalStock int64
+	for _, item := range skuItems {
+		if item.Price > 0 {
+			if priceMin == 0 || item.Price < priceMin {
+				priceMin = item.Price
+			}
+			if item.Price > priceMax {
+				priceMax = item.Price
+			}
+		}
+		totalStock += item.AvailableQuantity
+	}
+
+	// 查询类目下所有属性，用于补充 attribute_id / sort_order
+	attrNameMap := make(map[string]int64)
+	attrOrder := make(map[string]int)
+	if product.CategoryId > 0 {
+		var catAttrs []*entity.Attributes
+		err := dao.Attributes.Ctx(ctx).
+			Where(dao.Attributes.Columns().CategoryId, product.CategoryId).
+			Scan(&catAttrs)
+		if err == nil {
+			for i, a := range catAttrs {
+				attrNameMap[a.Name] = a.Id
+				attrOrder[a.Name] = i
+			}
+		}
+	}
+
+	// 富化可选的规格（attribute_id / sort_order）
+	for i := range specAttrs {
+		specAttrs[i].AttributeId = attrNameMap[specAttrs[i].AttributeName]
+		specAttrs[i].SortOrder = attrOrder[specAttrs[i].AttributeName]
+	}
+	if specAttrs == nil {
+		specAttrs = make([]v1.ProductAttrDetailResponse, 0)
+	}
+
+	// 不可选的规格：去重（排除已在可选规格中出现的）
+	seen := make(map[string]bool, len(specAttrs))
+	for _, s := range specAttrs {
+		seen[s.AttributeName] = true
+	}
+	nonSelectable := make([]v1.ProductAttrDetailResponse, 0, len(productAttrs))
+	for _, a := range productAttrs {
+		if seen[a.AttributeName] {
+			continue
+		}
+		seen[a.AttributeName] = true
+		a.AttributeId = attrNameMap[a.AttributeName]
+		a.SortOrder = attrOrder[a.AttributeName]
+		nonSelectable = append(nonSelectable, a)
+	}
+	if nonSelectable == nil {
+		nonSelectable = make([]v1.ProductAttrDetailResponse, 0)
+	}
+
+	specs := &v1.ProductSpecResponse{
+		Selectable:    specAttrs,
+		NonSelectable: nonSelectable,
 	}
 
 	return &v1.ProductsDetailRes{
 		Products:    product,
-		Attributes:  mergedAttrs,
+		PriceMin:    priceMin,
+		PriceMax:    priceMax,
+		TotalStock:  totalStock,
 		Description: description,
 		SKUs:        skuItems,
+		Specs:       specs,
 	}, nil
 }
 
@@ -579,48 +667,69 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 
 
 
-// ── Helper: Merge Spec Attrs + Product Attrs ────────────────────────────
 
-// mergeAttrs 合并 SKU 规格维度 + 商品属性，补充 attribute_id 和 sort_order
-func mergeAttrs(specAttrs, prodAttrs []v1.ProductAttrDetailResponse, categoryId int64, ctx context.Context) []v1.ProductAttrDetailResponse {
-	// 查询该类目的属性用于匹配 attribute_id
-	attrNameMap := make(map[string]int64)
-	attrOrder := make(map[string]int)
-	if categoryId > 0 {
-		var catAttrs []*entity.Attributes
-		err := dao.Attributes.Ctx(ctx).Where(dao.Attributes.Columns().CategoryId, categoryId).Scan(&catAttrs)
-		if err == nil {
-			for i, a := range catAttrs {
-				attrNameMap[a.Name] = a.Id
-				attrOrder[a.Name] = i
+type productStats struct {
+	PriceMin   int64
+	PriceMax   int64
+	TotalStock int64
+}
+
+// enrichProductStats 批量查询商品级价格区间和总库存
+func enrichProductStats(ctx context.Context, productIDs []int64) map[int64]productStats {
+	result := make(map[int64]productStats, len(productIDs))
+	if len(productIDs) == 0 {
+		return result
+	}
+	for _, id := range productIDs {
+		result[id] = productStats{}
+	}
+
+	// 价格区间：从 sp_skus 聚合
+	type priceRow struct {
+		ProductId int64
+		PriceMin  int64
+		PriceMax  int64
+	}
+	var prices []priceRow
+	err := dao.Skus.Ctx(ctx).
+		Fields("product_id", "MIN(price) AS price_min", "MAX(price) AS price_max").
+		Where("product_id IN (?)", productIDs).
+		Where("deleted_at IS NULL").
+		Group("product_id").
+		Scan(&prices)
+	if err == nil {
+		for _, r := range prices {
+			s := result[r.ProductId]
+			s.PriceMin = r.PriceMin
+			s.PriceMax = r.PriceMax
+			result[r.ProductId] = s
+		}
+	}
+
+	// 总库存：SUM(quantity - reserved) per product
+	type stockRow struct {
+		ProductId  int64
+		TotalStock int64
+	}
+	var stocks []stockRow
+	err = g.DB().Model("sp_skus s").
+		Fields("s.product_id", "SUM(COALESCE(i.quantity,0) - COALESCE(i.reserved,0)) AS total_stock").
+		LeftJoin("sp_inventories i", "i.sku_id = s.id AND i.deleted_at IS NULL").
+		Where("s.product_id IN (?)", productIDs).
+		Where("s.deleted_at IS NULL").
+		Group("s.product_id").
+		Scan(&stocks)
+	if err == nil {
+		for _, r := range stocks {
+			s := result[r.ProductId]
+			if r.TotalStock > 0 {
+				s.TotalStock = r.TotalStock
 			}
+			result[r.ProductId] = s
 		}
 	}
 
-	seen := make(map[string]bool)
-	merged := make([]v1.ProductAttrDetailResponse, 0, len(specAttrs)+len(prodAttrs))
-
-	// SKU 规格维度优先（前端 SKU 选择器用）
-	for _, a := range specAttrs {
-		if seen[a.AttributeName] {
-			continue
-		}
-		seen[a.AttributeName] = true
-		a.AttributeId = attrNameMap[a.AttributeName]
-		a.SortOrder = attrOrder[a.AttributeName]
-		merged = append(merged, a)
-	}
-	// 纯商品属性补充（非 SKU 规格的属性）
-	for _, a := range prodAttrs {
-		if seen[a.AttributeName] {
-			continue
-		}
-		seen[a.AttributeName] = true
-		a.AttributeId = attrNameMap[a.AttributeName]
-		a.SortOrder = attrOrder[a.AttributeName]
-		merged = append(merged, a)
-	}
-	return merged
+	return result
 }
 
 // enrichSKUInventory 批量加载 SKU 库存并写入 SkuDetailItem
