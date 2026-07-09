@@ -14,7 +14,7 @@ type InventoryLogs struct {
 	SkuId          int64       `json:"sku_id"          description:"关联 skus.id"`
 	MerchantId     int64       `json:"merchant_id"     description:"所属商家ID"`
 	WarehouseId    int64       `json:"warehouse_id"    description:"仓库ID"`
-	ChangeType     string      `json:"change_type"     description:"变更类型：order_lock-下单预占 order_unlock-取消释放 order_dedut-支付扣减 inbound-入库 outbound-出库 return-退货入库 adjust-盘盈亏修正"`
+	ChangeType     string      `json:"change_type"     description:"变更类型：order_lock-下单预占 order_unlock-取消释放 order_deduct-支付扣减 inbound-入库 outbound-出库 return-退货入库 adjust-盘盈亏修正"`
 	BeforeQuantity int64       `json:"before_quantity" description:"变更前物理库存"`
 	AfterQuantity  int64       `json:"after_quantity"  description:"变更后物理库存"`
 	BeforeReserved int64       `json:"before_reserved" description:"变更前预占库存"`

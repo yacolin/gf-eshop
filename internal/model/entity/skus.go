@@ -15,8 +15,7 @@ type Skus struct {
 	MerchantId     int64       `json:"merchant_id"      description:"所属商家ID"`
 	SkuCode        string      `json:"sku_code"         description:"商家编码（唯一，用于ERP/WMS对接）"`
 	Barcode        string      `json:"barcode"          description:"条码/EAN/UPC（仓库扫描用，NULL表示无条码）"`
-	Spec           string      `json:"spec"             description:"规格JSON（如{\"颜色\":\"红色\",\"内存\":\"256G\"}）"`
-	SpecSignature  string      `json:"spec_signature"   description:"规格MD5签名（用于快速匹配，由应用层计算）"`
+	SpecSummary    string      `json:"spec_summary"     description:"规格文本快照（如：红色 / 256G）"`
 	Price          int64       `json:"price"            description:"销售价（分）"`
 	MarketPrice    int64       `json:"market_price"     description:"划线价/市场价（分）"`
 	CostPrice      int64       `json:"cost_price"       description:"成本价（分，仅后台可见）"`

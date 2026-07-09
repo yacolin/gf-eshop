@@ -3,10 +3,7 @@ package products
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
-	"math"
 	"strconv"
-	"strings"
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
@@ -131,10 +128,10 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 		m = m.Where(dao.Products.Columns().Status, *req.Status)
 	}
 	if req.PriceMin > 0 {
-		m = m.WhereGTE(dao.Products.Columns().MinPrice, req.PriceMin)
+		m = m.Where(dao.Products.Columns().Id+" IN (SELECT DISTINCT product_id FROM sp_skus WHERE price >= ? AND deleted_at IS NULL)", req.PriceMin)
 	}
 	if req.PriceMax > 0 {
-		m = m.WhereLTE(dao.Products.Columns().MaxPrice, req.PriceMax)
+		m = m.Where(dao.Products.Columns().Id+" IN (SELECT DISTINCT product_id FROM sp_skus WHERE price <= ? AND deleted_at IS NULL)", req.PriceMax)
 	}
 	if cursorId > 0 {
 		m = m.WhereGT(dao.Products.Columns().Id, cursorId)
@@ -267,8 +264,8 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 	}
 	enrichSKUInventory(ctx, skuItems)
 
-	// 从 SKU spec JSON 聚合规格维度
-	specAttrs := aggregateSpecAttrs(skuEntities)
+	// 从 sku_specs EAV 表聚合规格维度
+	specAttrs := aggregateSpecAttrs(ctx, skuEntities)
 
 	// 合并 SKU 规格维度 + 商品属性，补充 attribute_id
 	mergedAttrs := mergeAttrs(specAttrs, productAttrs, product.CategoryId, ctx)
@@ -348,7 +345,7 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 				ProductId:      productId,
 				SkuCode:        sku.SkuCode,
 				Barcode:        sku.Barcode,
-				Spec:           sku.Spec,
+				SpecSummary:    sku.SpecSummary,
 				Price:          sku.Price,
 				MarketPrice:    sku.MarketPrice,
 				CostPrice:      sku.CostPrice,
@@ -388,29 +385,15 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 			}
 		}
 
-		if len(req.SKUs) > 0 {
-			minPrice := int64(math.MaxInt64)
-			maxPrice := int64(0)
-			for _, sku := range req.SKUs {
-				if sku.Price < minPrice {
-					minPrice = sku.Price
-				}
-				if sku.Price > maxPrice {
-					maxPrice = sku.Price
-				}
-			}
-			hasDesc := 0
-			if req.Description != "" || req.MobileDesc != "" {
-				hasDesc = 1
-			}
-			_, err = tx.Model("sp_products").Where("id", productId).Update(g.Map{
-				"min_price":       minPrice,
-				"max_price":       maxPrice,
-				"has_description": hasDesc,
-			})
-			if err != nil {
-				return err
-			}
+		hasDesc := 0
+		if req.Description != "" || req.MobileDesc != "" {
+			hasDesc = 1
+		}
+		_, err = tx.Model("sp_products").Where("id", productId).Update(g.Map{
+			"has_description": hasDesc,
+		})
+		if err != nil {
+			return err
 		}
 		return nil
 	})
@@ -537,8 +520,33 @@ func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.Produc
 
 // ── Helper: SKU Spec Aggregation ────────────────────────────────────────
 
-// aggregateSpecAttrs 从 SKU spec JSON 聚合规格维度（如 颜色→[红,蓝]）
-func aggregateSpecAttrs(skus []*entity.Skus) []v1.ProductAttrDetailResponse {
+// aggregateSpecAttrs 从 sku_specs EAV 表聚合规格维度（如 颜色→[红,蓝]）
+func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAttrDetailResponse {
+	if len(skus) == 0 {
+		return make([]v1.ProductAttrDetailResponse, 0)
+	}
+
+	skuIDs := make([]int64, 0, len(skus))
+	for _, sku := range skus {
+		skuIDs = append(skuIDs, sku.Id)
+	}
+
+	type specRow struct {
+		AttributeName  string `orm:"attribute_name"`
+		AttributeValue string `orm:"attribute_value"`
+	}
+	var rows []specRow
+	err := g.DB().Model("sp_sku_specs ss").
+		Fields("a.name AS attribute_name", "av.value AS attribute_value").
+		LeftJoin("sp_attributes a", "a.id = ss.attribute_id").
+		LeftJoin("sp_attribute_values av", "av.id = ss.attribute_value_id").
+		Where("ss.sku_id IN (?)", skuIDs).
+		Order("ss.sort_order ASC, av.sort_order ASC").
+		Scan(&rows)
+	if err != nil || len(rows) == 0 {
+		return make([]v1.ProductAttrDetailResponse, 0)
+	}
+
 	type attrValues struct {
 		set   map[string]struct{}
 		order []string
@@ -546,26 +554,17 @@ func aggregateSpecAttrs(skus []*entity.Skus) []v1.ProductAttrDetailResponse {
 	attrs := make(map[string]*attrValues)
 	keyOrder := make([]string, 0)
 
-	for _, sku := range skus {
-		if sku.Spec == "" || sku.Spec == "{}" {
-			continue
+	for _, r := range rows {
+		av, ok := attrs[r.AttributeName]
+		if !ok {
+			av = &attrValues{set: make(map[string]struct{})}
+			attrs[r.AttributeName] = av
+			keyOrder = append(keyOrder, r.AttributeName)
 		}
-		orderedIterate(sku.Spec, func(k, v string) {
-			av, ok := attrs[k]
-			if !ok {
-				av = &attrValues{set: make(map[string]struct{})}
-				attrs[k] = av
-				keyOrder = append(keyOrder, k)
-			}
-			if _, seen := av.set[v]; !seen {
-				av.set[v] = struct{}{}
-				av.order = append(av.order, v)
-			}
-		})
-	}
-
-	if len(keyOrder) == 0 {
-		return make([]v1.ProductAttrDetailResponse, 0)
+		if _, seen := av.set[r.AttributeValue]; !seen {
+			av.set[r.AttributeValue] = struct{}{}
+			av.order = append(av.order, r.AttributeValue)
+		}
 	}
 
 	result := make([]v1.ProductAttrDetailResponse, len(keyOrder))
@@ -578,29 +577,7 @@ func aggregateSpecAttrs(skus []*entity.Skus) []v1.ProductAttrDetailResponse {
 	return result
 }
 
-// orderedIterate 按 JSON 原始 key 顺序遍历对象，避免 map 遍历随机化
-func orderedIterate(jsonStr string, fn func(k, v string)) {
-	dec := json.NewDecoder(strings.NewReader(jsonStr))
-	t, err := dec.Token()
-	if err != nil || t != json.Delim('{') {
-		return
-	}
-	for dec.More() {
-		key, err := dec.Token()
-		if err != nil {
-			return
-		}
-		val, err := dec.Token()
-		if err != nil {
-			return
-		}
-		k, _ := key.(string)
-		v, _ := val.(string)
-		if k != "" {
-			fn(k, v)
-		}
-	}
-}
+
 
 // ── Helper: Merge Spec Attrs + Product Attrs ────────────────────────────
 

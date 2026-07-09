@@ -33,8 +33,8 @@ type AttributesCreateReq struct {
 
 	Name       string `json:"name"        v:"required|length:1,100" description:"属性名称"`
 	CategoryId int64  `json:"category_id" v:"required"              description:"所属类目ID"`
-	InputType  int    `json:"input_type"  v:"required|in:1,2,3,4"   description:"输入类型"`
-	Values     string `json:"values"      description:"可选值列表JSON"`
+	ValueType  int    `json:"value_type"  v:"required|in:1,2,3"     description:"值类型(1-文本 2-数值 3-颜色)"`
+	Filterable int    `json:"filterable"  description:"是否参与前台筛选"`
 	Unit       string `json:"unit"        description:"单位"`
 	Required   int    `json:"required"    description:"是否必填"`
 	Searchable int    `json:"searchable"  description:"是否可搜索"`
@@ -52,8 +52,8 @@ type AttributesUpdateReq struct {
 	Id         int64  `json:"id"          v:"required"`
 	Name       string `json:"name"        v:"length:1,100" description:"属性名称"`
 	CategoryId int64  `json:"category_id" description:"所属类目ID"`
-	InputType  int    `json:"input_type"  v:"in:1,2,3,4"   description:"输入类型"`
-	Values     string `json:"values"      description:"可选值列表JSON"`
+	ValueType  int    `json:"value_type"  v:"in:1,2,3"     description:"值类型(1-文本 2-数值 3-颜色)"`
+	Filterable int    `json:"filterable"  description:"是否参与前台筛选"`
 	Unit       string `json:"unit"        description:"单位"`
 	Required   int    `json:"required"    description:"是否必填"`
 	Searchable int    `json:"searchable"  description:"是否可搜索"`

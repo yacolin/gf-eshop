@@ -30,9 +30,6 @@ type ProductsColumns struct {
 	MainImage      string // 主图URL（CDN地址）
 	Images         string // 附图JSON数组（最多10张）
 	VideoUrl       string // 主图视频URL
-	MinPrice       string // SKU最低价（分）
-	MaxPrice       string // SKU最高价（分）
-	TotalStock     string // 可售库存总和（SUM(quantity - reserved)）
 	SalesCount     string // 总销量（从订单明细聚合，每日更新）
 	RatingAverage  string // 平均评分（1-5）
 	RatingCount    string // 评价总数
@@ -61,9 +58,6 @@ var productsColumns = ProductsColumns{
 	MainImage:      "main_image",
 	Images:         "images",
 	VideoUrl:       "video_url",
-	MinPrice:       "min_price",
-	MaxPrice:       "max_price",
-	TotalStock:     "total_stock",
 	SalesCount:     "sales_count",
 	RatingAverage:  "rating_average",
 	RatingCount:    "rating_count",

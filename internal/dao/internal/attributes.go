@@ -23,8 +23,8 @@ type AttributesColumns struct {
 	Id         string //
 	Name       string // 属性名称（如：处理器、屏幕尺寸）
 	CategoryId string // 所属类目ID（该属性只出现在这个类目下）
-	InputType  string // 1-文本输入 2-单选 3-多选 4-数字
-	Values     string // 可选值列表（如["A15","A16"]，仅单选/多选时使用）
+	ValueType  string // 1-文本 2-数值 3-颜色
+	Filterable string // 是否参与前台筛选
 	Unit       string // 单位（如：英寸、GB）
 	Required   string // 1-必填（该属性在该类目下创建商品时必须填写）
 	Searchable string // 1-作为前台筛选条件（列表页筛选项来源）
@@ -41,8 +41,8 @@ var attributesColumns = AttributesColumns{
 	Id:         "id",
 	Name:       "name",
 	CategoryId: "category_id",
-	InputType:  "input_type",
-	Values:     "values",
+	ValueType:  "value_type",
+	Filterable: "filterable",
 	Unit:       "unit",
 	Required:   "required",
 	Searchable: "searchable",

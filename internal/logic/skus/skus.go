@@ -97,7 +97,7 @@ func (s *sSkus) Create(ctx context.Context, req *v1.SkusCreateReq) (res *v1.Skus
 		ProductId:    req.ProductId,
 		SkuCode:      req.SkuCode,
 		Barcode:      req.Barcode,
-		Spec:         req.Spec,
+		SpecSummary:  req.SpecSummary,
 		Price:        req.Price,
 		MarketPrice:  req.MarketPrice,
 		CostPrice:    req.CostPrice,

@@ -15,8 +15,8 @@ type Attributes struct {
 	Id         interface{} //
 	Name       interface{} // 属性名称（如：处理器、屏幕尺寸）
 	CategoryId interface{} // 所属类目ID（该属性只出现在这个类目下）
-	InputType  interface{} // 1-文本输入 2-单选 3-多选 4-数字
-	Values     interface{} // 可选值列表（如["A15","A16"]，仅单选/多选时使用）
+	ValueType  interface{} // 1-文本 2-数值 3-颜色
+	Filterable interface{} // 是否参与前台筛选
 	Unit       interface{} // 单位（如：英寸、GB）
 	Required   interface{} // 1-必填（该属性在该类目下创建商品时必须填写）
 	Searchable interface{} // 1-作为前台筛选条件（列表页筛选项来源）

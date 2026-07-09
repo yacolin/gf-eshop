@@ -13,8 +13,8 @@ type Attributes struct {
 	Id         int64       `json:"id"          description:""`
 	Name       string      `json:"name"        description:"属性名称（如：处理器、屏幕尺寸）"`
 	CategoryId int64       `json:"category_id" description:"所属类目ID（该属性只出现在这个类目下）"`
-	InputType  int         `json:"input_type"  description:"1-文本输入 2-单选 3-多选 4-数字"`
-	Values     string      `json:"values"      description:"可选值列表（如[\"A15\",\"A16\"]，仅单选/多选时使用）"`
+	ValueType  int         `json:"value_type"  description:"1-文本 2-数值 3-颜色"`
+	Filterable int         `json:"filterable"  description:"是否参与前台筛选"`
 	Unit       string      `json:"unit"        description:"单位（如：英寸、GB）"`
 	Required   int         `json:"required"    description:"1-必填（该属性在该类目下创建商品时必须填写）"`
 	Searchable int         `json:"searchable"  description:"1-作为前台筛选条件（列表页筛选项来源）"`

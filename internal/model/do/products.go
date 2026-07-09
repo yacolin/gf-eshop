@@ -22,9 +22,6 @@ type Products struct {
 	MainImage      interface{} // 主图URL（CDN地址）
 	Images         interface{} // 附图JSON数组（最多10张）
 	VideoUrl       interface{} // 主图视频URL
-	MinPrice       interface{} // SKU最低价（分）
-	MaxPrice       interface{} // SKU最高价（分）
-	TotalStock     interface{} // 可售库存总和（SUM(quantity - reserved)）
 	SalesCount     interface{} // 总销量（从订单明细聚合，每日更新）
 	RatingAverage  interface{} // 平均评分（1-5）
 	RatingCount    interface{} // 评价总数

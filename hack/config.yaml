@@ -8,7 +8,7 @@ gfcli:
   gen:
     dao:
       - link: "mysql:root:123456@tcp(localhost:3306)/eshop_db?charset=utf8mb4&parseTime=True&loc=Local"
-        tables: "sp_brands,sp_categories,sp_category_brands,sp_products,sp_skus,sp_attributes,sp_product_attributes,sp_product_descriptions,sp_product_versions,sp_inventories,sp_inventory_logs,sp_warehouses"
+        tables: "sp_brands,sp_categories,sp_category_brands,sp_products,sp_skus,sp_attributes,sp_attribute_values,sp_sku_specs,sp_product_attributes,sp_product_descriptions,sp_product_versions,sp_inventories,sp_inventory_logs,sp_warehouses"
         removePrefix: "sp_"
         jsonCase: "Snake"
         jsonOmitEmpty: true

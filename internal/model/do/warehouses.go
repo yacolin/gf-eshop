@@ -16,6 +16,7 @@ type Warehouses struct {
 	MerchantId    interface{} // 所属商家ID（0表示平台仓）
 	WarehouseName interface{} // 仓库名称
 	WarehouseType interface{} // 1-平台仓 2-商家仓 3-第三方仓
+	WarehouseCode interface{} // 仓库编码
 	Status        interface{} // 1-启用 2-禁用
 	Province      interface{} // 省
 	City          interface{} // 市

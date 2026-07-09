@@ -20,9 +20,6 @@ type Products struct {
 	MainImage      string      `json:"main_image"      description:"主图URL（CDN地址）"`
 	Images         string      `json:"images"          description:"附图JSON数组（最多10张）"`
 	VideoUrl       string      `json:"video_url"       description:"主图视频URL"`
-	MinPrice       int64       `json:"min_price"       description:"SKU最低价（分）"`
-	MaxPrice       int64       `json:"max_price"       description:"SKU最高价（分）"`
-	TotalStock     int         `json:"total_stock"     description:"可售库存总和（SUM(quantity - reserved)）"`
 	SalesCount     int         `json:"sales_count"     description:"总销量（从订单明细聚合，每日更新）"`
 	RatingAverage  float64     `json:"rating_average"  description:"平均评分（1-5）"`
 	RatingCount    int         `json:"rating_count"    description:"评价总数"`

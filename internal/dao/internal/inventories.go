@@ -26,7 +26,6 @@ type InventoriesColumns struct {
 	WarehouseId   string // 仓库ID（关联 sp_warehouses.id）
 	Quantity      string // 物理库存总量（含预占）
 	Reserved      string // 预占库存（下单未支付）
-	Available     string // 可售库存（虚拟列，无需持久化）
 	InTransit     string // 在途库存（采购中/调拨中）
 	Threshold     string // 安全库存预警阈值（低于此值触发告警）
 	MaxThreshold  string // 最大库存上限（入库不能超过此值）
@@ -46,7 +45,6 @@ var inventoriesColumns = InventoriesColumns{
 	WarehouseId:   "warehouse_id",
 	Quantity:      "quantity",
 	Reserved:      "reserved",
-	Available:     "available",
 	InTransit:     "in_transit",
 	Threshold:     "threshold",
 	MaxThreshold:  "max_threshold",

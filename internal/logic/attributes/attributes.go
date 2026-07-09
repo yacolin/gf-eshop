@@ -78,8 +78,8 @@ func (s *sAttributes) Create(ctx context.Context, req *v1.AttributesCreateReq) (
 	result, err := dao.Attributes.Ctx(ctx).Insert(do.Attributes{
 		Name:       req.Name,
 		CategoryId: req.CategoryId,
-		InputType:  req.InputType,
-		Values:     req.Values,
+		ValueType:  req.ValueType,
+		Filterable: req.Filterable,
 		Unit:       req.Unit,
 		Required:   req.Required,
 		Searchable: req.Searchable,
@@ -106,8 +106,8 @@ func (s *sAttributes) Update(ctx context.Context, req *v1.AttributesUpdateReq) (
 	_, err = dao.Attributes.Ctx(ctx).Data(do.Attributes{
 		Name:       req.Name,
 		CategoryId: req.CategoryId,
-		InputType:  req.InputType,
-		Values:     req.Values,
+		ValueType:  req.ValueType,
+		Filterable: req.Filterable,
 		Unit:       req.Unit,
 		Required:   req.Required,
 		Searchable: req.Searchable,

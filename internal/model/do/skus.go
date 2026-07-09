@@ -17,8 +17,7 @@ type Skus struct {
 	MerchantId     interface{} // 所属商家ID
 	SkuCode        interface{} // 商家编码（唯一，用于ERP/WMS对接）
 	Barcode        interface{} // 条码/EAN/UPC（仓库扫描用，NULL表示无条码）
-	Spec           interface{} // 规格JSON（如{"颜色":"红色","内存":"256G"}）
-	SpecSignature  interface{} // 规格MD5签名（用于快速匹配，由应用层计算）
+	SpecSummary    interface{} // 规格文本快照（如：红色 / 256G）
 	Price          interface{} // 销售价（分）
 	MarketPrice    interface{} // 划线价/市场价（分）
 	CostPrice      interface{} // 成本价（分，仅后台可见）

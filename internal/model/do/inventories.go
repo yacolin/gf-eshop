@@ -18,7 +18,6 @@ type Inventories struct {
 	WarehouseId   interface{} // 仓库ID（关联 sp_warehouses.id）
 	Quantity      interface{} // 物理库存总量（含预占）
 	Reserved      interface{} // 预占库存（下单未支付）
-	Available     interface{} // 可售库存（虚拟列，无需持久化）
 	InTransit     interface{} // 在途库存（采购中/调拨中）
 	Threshold     interface{} // 安全库存预警阈值（低于此值触发告警）
 	MaxThreshold  interface{} // 最大库存上限（入库不能超过此值）

@@ -25,8 +25,7 @@ type SkusColumns struct {
 	MerchantId     string // 所属商家ID
 	SkuCode        string // 商家编码（唯一，用于ERP/WMS对接）
 	Barcode        string // 条码/EAN/UPC（仓库扫描用，NULL表示无条码）
-	Spec           string // 规格JSON（如{"颜色":"红色","内存":"256G"}）
-	SpecSignature  string // 规格MD5签名（用于快速匹配，由应用层计算）
+	SpecSummary    string // 规格文本快照（如：红色 / 256G）
 	Price          string // 销售价（分）
 	MarketPrice    string // 划线价/市场价（分）
 	CostPrice      string // 成本价（分，仅后台可见）
@@ -51,8 +50,7 @@ var skusColumns = SkusColumns{
 	MerchantId:     "merchant_id",
 	SkuCode:        "sku_code",
 	Barcode:        "barcode",
-	Spec:           "spec",
-	SpecSignature:  "spec_signature",
+	SpecSummary:    "spec_summary",
 	Price:          "price",
 	MarketPrice:    "market_price",
 	CostPrice:      "cost_price",

@@ -24,6 +24,7 @@ type WarehousesColumns struct {
 	MerchantId    string // 所属商家ID（0表示平台仓）
 	WarehouseName string // 仓库名称
 	WarehouseType string // 1-平台仓 2-商家仓 3-第三方仓
+	WarehouseCode string // 仓库编码
 	Status        string // 1-启用 2-禁用
 	Province      string // 省
 	City          string // 市
@@ -40,6 +41,7 @@ var warehousesColumns = WarehousesColumns{
 	MerchantId:    "merchant_id",
 	WarehouseName: "warehouse_name",
 	WarehouseType: "warehouse_type",
+	WarehouseCode: "warehouse_code",
 	Status:        "status",
 	Province:      "province",
 	City:          "city",

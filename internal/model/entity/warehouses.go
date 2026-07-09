@@ -14,6 +14,7 @@ type Warehouses struct {
 	MerchantId    int64       `json:"merchant_id"    description:"所属商家ID（0表示平台仓）"`
 	WarehouseName string      `json:"warehouse_name" description:"仓库名称"`
 	WarehouseType int         `json:"warehouse_type" description:"1-平台仓 2-商家仓 3-第三方仓"`
+	WarehouseCode string      `json:"warehouse_code" description:"仓库编码"`
 	Status        int         `json:"status"         description:"1-启用 2-禁用"`
 	Province      string      `json:"province"       description:"省"`
 	City          string      `json:"city"           description:"市"`

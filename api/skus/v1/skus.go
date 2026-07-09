@@ -44,7 +44,7 @@ type SkusCreateReq struct {
 	ProductId    int64   `json:"product_id"    v:"required"            description:"商品ID"`
 	SkuCode      string  `json:"sku_code"      v:"required|length:1,100" description:"商家编码"`
 	Barcode      string  `json:"barcode"       description:"条码"`
-	Spec         string  `json:"spec"          v:"required"            description:"规格JSON"`
+	SpecSummary  string  `json:"spec_summary"  description:"规格文本快照（如：红色 / 256G）"`
 	Price        int64   `json:"price"         v:"required|min:1"      description:"销售价(分)"`
 	MarketPrice  int64   `json:"market_price"  description:"划线价(分)"`
 	CostPrice    int64   `json:"cost_price"    description:"成本价(分)"`

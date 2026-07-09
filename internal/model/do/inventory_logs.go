@@ -16,7 +16,7 @@ type InventoryLogs struct {
 	SkuId          interface{} // 关联 skus.id
 	MerchantId     interface{} // 所属商家ID
 	WarehouseId    interface{} // 仓库ID
-	ChangeType     interface{} // 变更类型：order_lock-下单预占 order_unlock-取消释放 order_dedut-支付扣减 inbound-入库 outbound-出库 return-退货入库 adjust-盘盈亏修正
+	ChangeType     interface{} // 变更类型：order_lock-下单预占 order_unlock-取消释放 order_deduct-支付扣减 inbound-入库 outbound-出库 return-退货入库 adjust-盘盈亏修正
 	BeforeQuantity interface{} // 变更前物理库存
 	AfterQuantity  interface{} // 变更后物理库存
 	BeforeReserved interface{} // 变更前预占库存
