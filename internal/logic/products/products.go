@@ -3,9 +3,13 @@ package products
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gogf/gf/v2/database/gdb"
+	"github.com/gogf/gf/v2/errors/gcode"
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -382,27 +386,56 @@ func (s *sProducts) DetailPure(ctx context.Context, req *v1.ProductsDetailPureRe
 }
 
 func (s *sProducts) Create(ctx context.Context, req *v1.ProductsCreateReq) (res *v1.ProductsCreateRes, err error) {
-	result, err := dao.Products.Ctx(ctx).Insert(do.Products{
-		Name:       req.Name,
-		Subtitle:   req.Subtitle,
-		CategoryId: req.CategoryId,
-		BrandId:    req.BrandId,
-		Unit:       req.Unit,
-		MainImage:  req.MainImage,
-		Images:     req.Images,
-		VideoUrl:   req.VideoUrl,
-		SortOrder:  req.SortOrder,
-		Status:     req.Status,
-		CreatedBy:  req.CreatedBy,
+	var productId int64
+
+	err = dao.Products.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		productData := do.Products{
+			Name:       req.Name,
+			Subtitle:   req.Subtitle,
+			CategoryId: req.CategoryId,
+			BrandId:    req.BrandId,
+			Unit:       req.Unit,
+			MainImage:  req.MainImage,
+			VideoUrl:   req.VideoUrl,
+			SortOrder:  req.SortOrder,
+			Status:     req.Status,
+			CreatedBy:  req.CreatedBy,
+		}
+		if req.Images != "" {
+			productData.Images = req.Images
+		}
+		result, err := tx.Model("sp_products").Insert(productData)
+		if err != nil {
+			return err
+		}
+		id, _ := result.LastInsertId()
+		productId = id
+
+		// 写入非销售属性（is_sku_spec = 0）
+		for _, attr := range req.Attributes {
+			data := do.ProductAttributes{
+				ProductId:   productId,
+				AttributeId: attr.AttributeId,
+				Value:       attr.Value,
+			}
+			if attr.AttributeValueId > 0 {
+				data.AttributeValueId = attr.AttributeValueId
+			}
+			_, err = tx.Model("sp_product_attributes").Insert(data)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	id, _ := result.LastInsertId()
-	if id > 0 {
-		productBloom.add(id)
+
+	if productId > 0 {
+		productBloom.add(productId)
 	}
-	return &v1.ProductsCreateRes{Id: id}, nil
+	return &v1.ProductsCreateRes{Id: productId}, nil
 }
 
 func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullReq) (res *v1.ProductsCreateFullRes, err error) {
@@ -463,11 +496,15 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 		}
 
 		for _, attr := range req.Attributes {
-			_, err = tx.Model("sp_product_attributes").Insert(do.ProductAttributes{
+			data := do.ProductAttributes{
 				ProductId:   productId,
 				AttributeId: attr.AttributeId,
 				Value:       attr.Value,
-			})
+			}
+			if attr.AttributeValueId > 0 {
+				data.AttributeValueId = attr.AttributeValueId
+			}
+			_, err = tx.Model("sp_product_attributes").Insert(data)
 			if err != nil {
 				return err
 			}
@@ -493,6 +530,277 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 	}
 	delAllProductListCaches(context.Background())
 	return &v1.ProductsCreateFullRes{Id: productId}, nil
+}
+// GetAttributes 获取商品绑定的非销售属性列表
+func (s *sProducts) GetAttributes(ctx context.Context, req *v1.ProductsGetAttributesReq) (res *v1.ProductsGetAttributesRes, err error) {
+	type attrRow struct {
+		Id               int64  `orm:"id"`
+		AttributeId      int64  `orm:"attribute_id"`
+		AttributeName    string `orm:"attribute_name"`
+		AttributeValueId int64  `orm:"attribute_value_id"`
+		Value            string `orm:"value"`
+	}
+	var rows []attrRow
+	err = g.DB().Model("sp_product_attributes pa").
+		Fields("pa.id", "pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id", "pa.value").
+		LeftJoin("sp_attributes a", "a.id = pa.attribute_id").
+		Where("pa.product_id", req.Id).
+		Where("pa.deleted_at IS NULL").
+		Order("pa.sort_order ASC, pa.id ASC").
+		Scan(&rows)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = make([]attrRow, 0)
+	}
+	list := make([]*v1.ProductsAttributeItem, len(rows))
+	for i, r := range rows {
+		list[i] = &v1.ProductsAttributeItem{
+			Id:               r.Id,
+			AttributeId:      r.AttributeId,
+			AttributeName:    r.AttributeName,
+			AttributeValueId: r.AttributeValueId,
+			Value:            r.Value,
+		}
+	}
+	return &v1.ProductsGetAttributesRes{List: list}, nil
+}
+
+// UpdateAttributes 全量替换商品的非销售属性
+func (s *sProducts) UpdateAttributes(ctx context.Context, req *v1.ProductsUpdateAttributesReq) (res *v1.ProductsUpdateAttributesRes, err error) {
+	err = dao.Products.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		_, err := tx.Model("sp_product_attributes").
+			Where("product_id", req.Id).
+			Unscoped().Delete()
+		if err != nil {
+			return err
+		}
+		for _, attr := range req.Attributes {
+			data := do.ProductAttributes{
+				ProductId:   req.Id,
+				AttributeId: attr.AttributeId,
+				Value:       attr.Value,
+			}
+			if attr.AttributeValueId > 0 {
+				data.AttributeValueId = attr.AttributeValueId
+			}
+			_, err = tx.Model("sp_product_attributes").Insert(data)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ProductsUpdateAttributesRes{}, nil
+}
+
+// EnrichedDetail 商品富化详情（同 Detail，独立路径供前端使用）
+func (s *sProducts) EnrichedDetail(ctx context.Context, req *v1.ProductsEnrichedDetailReq) (res *v1.ProductsEnrichedDetailRes, err error) {
+	detail, err := s.Detail(ctx, &v1.ProductsDetailReq{Id: req.Id})
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ProductsEnrichedDetailRes{ProductsDetailRes: detail}, nil
+}
+
+// BatchCreateSKUs 批量生成 SKU（笛卡尔积）
+func (s *sProducts) BatchCreateSKUs(ctx context.Context, req *v1.ProductsBatchCreateSKUsReq) (res *v1.ProductsBatchCreateSKUsRes, err error) {
+	// 校验商品存在
+	count, err := dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id, req.ProductId).Count()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, errcode.ErrProductNotFound
+	}
+
+	// 校验所有属性均为 is_sku_spec = 1
+	attrNameMap := make(map[int64]string)
+	valueTextMap := make(map[int64]map[int64]string)
+	for _, group := range req.SpecGroups {
+		var attr *entity.Attributes
+		err := dao.Attributes.Ctx(ctx).Where(dao.Attributes.Columns().Id, group.AttributeId).Scan(&attr)
+		if err != nil {
+			return nil, err
+		}
+		if attr == nil {
+			return nil, gerror.NewCode(gcode.CodeInvalidParameter,
+				fmt.Sprintf("属性不存在: %d", group.AttributeId))
+		}
+		if attr.IsSkuSpec != 1 {
+			return nil, gerror.NewCode(gcode.CodeInvalidParameter,
+				fmt.Sprintf("非销售属性不可用于生成SKU: %s", attr.Name))
+		}
+		attrNameMap[group.AttributeId] = attr.Name
+
+		if len(group.ValueIds) == 0 {
+			return nil, gerror.NewCode(gcode.CodeInvalidParameter,
+				fmt.Sprintf("属性 %s 至少选择一个值", attr.Name))
+		}
+
+		vals := make(map[int64]string, len(group.ValueIds))
+		for _, vid := range group.ValueIds {
+			var v *entity.AttributeValues
+			err := dao.AttributeValues.Ctx(ctx).Where(dao.AttributeValues.Columns().Id, vid).Scan(&v)
+			if err != nil {
+				return nil, err
+			}
+			if v == nil {
+				return nil, gerror.NewCode(gcode.CodeInvalidParameter,
+					fmt.Sprintf("属性值不存在: %d", vid))
+			}
+			vals[vid] = v.Value
+		}
+		valueTextMap[group.AttributeId] = vals
+	}
+
+	// 笛卡尔积计算
+	combinations := computeCartesianProduct(req.SpecGroups, valueTextMap)
+	if len(combinations) == 0 {
+		return nil, gerror.NewCode(gcode.CodeInvalidParameter, "没有有效的属性值组合")
+	}
+
+	// 查询所有仓库
+	var warehouses []*entity.Warehouses
+	err = dao.Warehouses.Ctx(ctx).Scan(&warehouses)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := req.SkuCodePrefix
+	if prefix == "" {
+		prefix = fmt.Sprintf("SKU-%d-", req.ProductId)
+	}
+
+	// 查询当前已存在的 SKU 数量（含软删除），避免重新创建时唯一键冲突
+	var existingCount int
+	cnt, cntErr := dao.Skus.Ctx(ctx).Unscoped().Where(dao.Skus.Columns().ProductId, req.ProductId).Count()
+	if cntErr == nil {
+		existingCount = cnt
+	}
+	offset := existingCount
+
+	type createdSku struct {
+		id      int64
+		code    string
+		summary string
+		price   int64
+	}
+	var createdSkus []createdSku
+
+	err = dao.Products.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		for i, combo := range combinations {
+			parts := make([]string, 0, len(combo))
+			for _, opt := range combo {
+				parts = append(parts, opt.ValueText)
+			}
+			summary := strings.Join(parts, " / ")
+
+			skuCode := fmt.Sprintf("%s%03d", prefix, offset+i+1)
+
+			result, err := tx.Model("sp_skus").Insert(do.Skus{
+				ProductId:   req.ProductId,
+				SkuCode:     skuCode,
+				SpecSummary: summary,
+				Price:       req.BasePrice,
+				MarketPrice: req.BasePrice,
+				CostPrice:   int64(float64(req.BasePrice) * 0.6),
+			})
+			if err != nil {
+				return err
+			}
+			skuId, _ := result.LastInsertId()
+
+			for sortOrder, opt := range combo {
+				_, err = tx.Model("sp_sku_specs").Insert(do.SkuSpecs{
+					SkuId:            skuId,
+					AttributeId:      opt.AttributeId,
+					AttributeValueId:  opt.ValueId,
+					SortOrder:        sortOrder,
+				})
+				if err != nil {
+					return err
+				}
+			}
+
+			for _, w := range warehouses {
+				_, err = tx.Model("sp_inventories").Insert(do.Inventories{
+					SkuId:       skuId,
+					WarehouseId: w.Id,
+					Quantity:    0,
+					Reserved:    0,
+					Threshold:   10,
+				})
+				if err != nil {
+					return err
+				}
+			}
+
+			createdSkus = append(createdSkus, createdSku{
+				id:      skuId,
+				code:    skuCode,
+				summary: summary,
+				price:   req.BasePrice,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]*v1.BatchCreateSkuItem, len(createdSkus))
+	for i, sku := range createdSkus {
+		items[i] = &v1.BatchCreateSkuItem{
+			Id:          sku.id,
+			SkuCode:     sku.code,
+			SpecSummary: sku.summary,
+			Price:       sku.price,
+		}
+	}
+
+	delAllProductListCaches(context.Background())
+	return &v1.ProductsBatchCreateSKUsRes{
+		Total: len(items),
+		SKUs:  items,
+	}, nil
+}
+
+// specOption 笛卡尔积中的一个维度选项
+type specOption struct {
+	AttributeId int64
+	ValueId     int64
+	ValueText   string
+}
+
+// computeCartesianProduct 计算属性值的笛卡尔积，返回所有规格组合
+func computeCartesianProduct(groups []v1.SpecGroupItem, valueTextMap map[int64]map[int64]string) [][]specOption {
+	if len(groups) == 0 {
+		return nil
+	}
+	result := [][]specOption{{}}
+	for _, group := range groups {
+		var newResult [][]specOption
+		for _, combo := range result {
+			for _, vid := range group.ValueIds {
+				text := valueTextMap[group.AttributeId][vid]
+				newCombo := make([]specOption, len(combo), len(combo)+1)
+				copy(newCombo, combo)
+				newCombo = append(newCombo, specOption{
+					AttributeId: group.AttributeId,
+					ValueId:     vid,
+					ValueText:   text,
+				})
+				newResult = append(newResult, newCombo)
+			}
+		}
+		result = newResult
+	}
+	return result
 }
 
 func (s *sProducts) Update(ctx context.Context, req *v1.ProductsUpdateReq) (res *v1.ProductsUpdateRes, err error) {

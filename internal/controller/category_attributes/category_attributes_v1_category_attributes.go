@@ -19,6 +19,10 @@ func (c *ControllerV1) BatchCreate(ctx context.Context, req *v1.CategoryAttribut
 	return service.CategoryAttributes().BatchCreate(ctx, req)
 }
 
+func (c *ControllerV1) ListByCat(ctx context.Context, req *v1.CategoryAttributesListByCatReq) (res *v1.CategoryAttributesListByCatRes, err error) {
+	return service.CategoryAttributes().ListByCat(ctx, req)
+}
+
 func (c *ControllerV1) Delete(ctx context.Context, req *v1.CategoryAttributesDeleteReq) (res *v1.CategoryAttributesDeleteRes, err error) {
 	return service.CategoryAttributes().Delete(ctx, req)
 }

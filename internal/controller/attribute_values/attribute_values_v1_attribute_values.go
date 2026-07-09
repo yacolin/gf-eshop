@@ -23,6 +23,10 @@ func (c *ControllerV1) Update(ctx context.Context, req *v1.AttributeValuesUpdate
 	return service.AttributeValues().Update(ctx, req)
 }
 
+func (c *ControllerV1) ListByAttr(ctx context.Context, req *v1.AttributeValuesListByAttrReq) (res *v1.AttributeValuesListByAttrRes, err error) {
+	return service.AttributeValues().ListByAttr(ctx, req)
+}
+
 func (c *ControllerV1) Delete(ctx context.Context, req *v1.AttributeValuesDeleteReq) (res *v1.AttributeValuesDeleteRes, err error) {
 	return service.AttributeValues().Delete(ctx, req)
 }

@@ -11,6 +11,7 @@ type ICategoryAttributes interface {
 	Create(ctx context.Context, req *v1.CategoryAttributesCreateReq) (res *v1.CategoryAttributesCreateRes, err error)
 	BatchCreate(ctx context.Context, req *v1.CategoryAttributesBatchCreateReq) (res *v1.CategoryAttributesBatchCreateRes, err error)
 	Delete(ctx context.Context, req *v1.CategoryAttributesDeleteReq) (res *v1.CategoryAttributesDeleteRes, err error)
+	ListByCat(ctx context.Context, req *v1.CategoryAttributesListByCatReq) (res *v1.CategoryAttributesListByCatRes, err error)
 }
 
 var localCategoryAttributes ICategoryAttributes

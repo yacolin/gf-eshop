@@ -60,6 +60,22 @@ func (s *sCategoryAttributes) BatchCreate(ctx context.Context, req *v1.CategoryA
 	return &v1.CategoryAttributesBatchCreateRes{}, nil
 }
 
+
+func (s *sCategoryAttributes) ListByCat(ctx context.Context, req *v1.CategoryAttributesListByCatReq) (res *v1.CategoryAttributesListByCatRes, err error) {
+	var list []*entity.CategoryAttributes
+	err = dao.CategoryAttributes.Ctx(ctx).
+		Where(dao.CategoryAttributes.Columns().CategoryId, req.Id).
+		OrderAsc(dao.CategoryAttributes.Columns().SortOrder).
+		Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.CategoryAttributes, 0)
+	}
+	return &v1.CategoryAttributesListByCatRes{List: list}, nil
+}
+
 func (s *sCategoryAttributes) Delete(ctx context.Context, req *v1.CategoryAttributesDeleteReq) (res *v1.CategoryAttributesDeleteRes, err error) {
 	_, err = dao.CategoryAttributes.Ctx(ctx).Where(dao.CategoryAttributes.Columns().Id, req.Id).Delete()
 	if err != nil {

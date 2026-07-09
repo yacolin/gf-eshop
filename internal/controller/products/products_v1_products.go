@@ -27,6 +27,23 @@ func (c *ControllerV1) CreateFull(ctx context.Context, req *v1.ProductsCreateFul
 	return service.Products().CreateFull(ctx, req)
 }
 
+
+func (c *ControllerV1) GetAttributes(ctx context.Context, req *v1.ProductsGetAttributesReq) (res *v1.ProductsGetAttributesRes, err error) {
+	return service.Products().GetAttributes(ctx, req)
+}
+
+func (c *ControllerV1) UpdateAttributes(ctx context.Context, req *v1.ProductsUpdateAttributesReq) (res *v1.ProductsUpdateAttributesRes, err error) {
+	return service.Products().UpdateAttributes(ctx, req)
+}
+
+func (c *ControllerV1) EnrichedDetail(ctx context.Context, req *v1.ProductsEnrichedDetailReq) (res *v1.ProductsEnrichedDetailRes, err error) {
+	return service.Products().EnrichedDetail(ctx, req)
+}
+
+func (c *ControllerV1) BatchCreateSKUs(ctx context.Context, req *v1.ProductsBatchCreateSKUsReq) (res *v1.ProductsBatchCreateSKUsRes, err error) {
+	return service.Products().BatchCreateSKUs(ctx, req)
+}
+
 func (c *ControllerV1) Update(ctx context.Context, req *v1.ProductsUpdateReq) (res *v1.ProductsUpdateRes, err error) {
 	return service.Products().Update(ctx, req)
 }

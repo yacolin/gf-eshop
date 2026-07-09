@@ -125,6 +125,24 @@ func (s *sAttributeValues) Update(ctx context.Context, req *v1.AttributeValuesUp
 	return &v1.AttributeValuesUpdateRes{}, nil
 }
 
+
+func (s *sAttributeValues) ListByAttr(ctx context.Context, req *v1.AttributeValuesListByAttrReq) (res *v1.AttributeValuesListByAttrRes, err error) {
+	var list []*entity.AttributeValues
+	err = dao.AttributeValues.Ctx(ctx).
+		Where(dao.AttributeValues.Columns().AttributeId, req.Id).
+		Where(dao.AttributeValues.Columns().Status, 1).
+		OrderDesc(dao.AttributeValues.Columns().SearchWeight).
+		OrderAsc(dao.AttributeValues.Columns().SortOrder).
+		Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.AttributeValues, 0)
+	}
+	return &v1.AttributeValuesListByAttrRes{List: list}, nil
+}
+
 func (s *sAttributeValues) Delete(ctx context.Context, req *v1.AttributeValuesDeleteReq) (res *v1.AttributeValuesDeleteRes, err error) {
 	_, err = dao.AttributeValues.Ctx(ctx).Where(dao.AttributeValues.Columns().Id, req.Id).Delete()
 	if err != nil {

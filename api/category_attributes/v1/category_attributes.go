@@ -42,6 +42,14 @@ type CategoryAttributesBatchItem struct {
 }
 type CategoryAttributesBatchCreateRes struct{}
 
+type CategoryAttributesListByCatReq struct {
+	g.Meta `path:"/categories/{id}/attributes" tags:"Categories" method:"get" summary:"获取类目推荐属性（按类目ID）"`
+	Id     int64 `json:"id" v:"required"`
+}
+type CategoryAttributesListByCatRes struct {
+	List []*entity.CategoryAttributes `json:"list"`
+}
+
 type CategoryAttributesDeleteReq struct {
 	g.Meta `path:"/category_attributes/{id}" tags:"CategoryAttributes" method:"delete" summary:"删除类目属性关联"`
 

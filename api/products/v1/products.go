@@ -6,7 +6,10 @@ import (
 	"gf-eshop/internal/model/entity"
 )
 
-// CreateFull 嵌套子结构体
+// ──────────────────────────────────────────────
+// 公共嵌套结构体
+// ──────────────────────────────────────────────
+
 type CreateSKUItem struct {
 	SkuCode      string  `json:"sku_code"      description:"商家编码"`
 	Barcode      string  `json:"barcode"       description:"条码"`
@@ -25,9 +28,67 @@ type CreateSKUItem struct {
 }
 
 type CreateProductAttrItem struct {
-	AttributeId int64  `json:"attribute_id" description:"属性ID"`
-	Value       string `json:"value"        description:"属性值"`
+	AttributeId      int64  `json:"attribute_id"       description:"属性ID"`
+	AttributeValueId int64  `json:"attribute_value_id"  description:"引用属性值字典ID（可选），优先使用"`
+	Value            string `json:"value"              description:"属性值"`
 }
+
+// ──────────────────────────────────────────────
+// 批量创建 SKU（Phase 2 — 笛卡尔积）
+// ──────────────────────────────────────────────
+
+type SpecGroupItem struct {
+	AttributeId int64   `json:"attribute_id" v:"required" description:"销售属性ID（is_sku_spec=1）"`
+	ValueIds    []int64 `json:"value_ids"    v:"required" description:"选中的属性值ID列表"`
+}
+
+type BatchCreateSkuItem struct {
+	Id          int64  `json:"id"           description:"SKU ID"`
+	SkuCode     string `json:"sku_code"     description:"商家编码"`
+	SpecSummary string `json:"spec_summary" description:"规格文本快照"`
+	Price       int64  `json:"price"        description:"销售价(分)"`
+}
+
+type ProductsBatchCreateSKUsReq struct {
+	g.Meta `path:"/products/{product_id}/skus/batch" tags:"Products" method:"post" summary:"批量生成SKU（笛卡尔积）"`
+
+	ProductId      int64           `json:"product_id"       v:"required" description:"商品ID"`
+	SpecGroups     []SpecGroupItem `json:"spec_groups"      v:"required" description:"规格分组，系统自动计算笛卡尔积"`
+	BasePrice      int64           `json:"base_price"       description:"基准价(分)，各SKU统一使用此价格"`
+	SkuCodePrefix  string          `json:"sku_code_prefix"  description:"SKU编码前缀，为空则使用SKU-{product_id}-"`
+}
+type ProductsBatchCreateSKUsRes struct {
+	Total int                   `json:"total" description:"生成SKU数量"`
+	SKUs  []*BatchCreateSkuItem `json:"skus"`
+}
+
+// ──────────────────────────────────────────────
+// 创建商品（Phase 1 — 商品概况 + 非销售属性）
+// ──────────────────────────────────────────────
+
+type ProductsCreateReq struct {
+	g.Meta `path:"/products" tags:"Products" method:"post" summary:"新增商品（含非销售属性绑定）"`
+
+	Name       string                 `json:"name"        v:"required|length:1,200" description:"商品名称"`
+	Subtitle   string                 `json:"subtitle"    description:"副标题"`
+	CategoryId int64                  `json:"category_id" v:"required"             description:"类目ID"`
+	BrandId    int64                  `json:"brand_id"    description:"品牌ID"`
+	Unit       string                 `json:"unit"        description:"单位"`
+	MainImage  string                 `json:"main_image"  v:"required"             description:"主图"`
+	Images     string                 `json:"images"      description:"附图JSON"`
+	VideoUrl   string                 `json:"video_url"   description:"视频URL"`
+	SortOrder  int                    `json:"sort_order"  description:"排序权重"`
+	Status     int                    `json:"status"      description:"状态"`
+	CreatedBy  string                 `json:"created_by"  description:"创建人"`
+	Attributes []CreateProductAttrItem `json:"attributes" description:"非销售属性值列表（仅 is_sku_spec=0 的属性）"`
+}
+type ProductsCreateRes struct {
+	Id int64 `json:"id"`
+}
+
+// ──────────────────────────────────────────────
+// 创建商品（Phase 1+2 全量 — 兼容遗留）
+// ──────────────────────────────────────────────
 
 type ProductsCreateFullReq struct {
 	g.Meta `path:"/products/full" tags:"Products" method:"post" summary:"创建商品（含SKU/属性/描述）"`
@@ -50,6 +111,10 @@ type ProductsCreateFullReq struct {
 type ProductsCreateFullRes struct {
 	Id int64 `json:"id"`
 }
+
+// ──────────────────────────────────────────────
+// 列表、详情、更新、删除
+// ──────────────────────────────────────────────
 
 type ProductsListReq struct {
 	g.Meta `path:"/products" tags:"Products" method:"get" summary:"商品列表(游标分页)"`
@@ -108,31 +173,48 @@ type ProductsDetailRes struct {
 	Specs       *ProductSpecResponse         `json:"specs"`
 }
 
+// ──────────────────────────────────────────────
+// 产品属性管理（CRUD）
+// ──────────────────────────────────────────────
+
+type ProductsGetAttributesReq struct {
+	g.Meta `path:"/products/{id}/attributes" tags:"Products" method:"get" summary:"获取商品绑定属性"`
+
+	Id int64 `json:"id" v:"required"`
+}
+type ProductsAttributeItem struct {
+	Id               int64  `json:"id"                 description:"关联ID"`
+	AttributeId      int64  `json:"attribute_id"       description:"属性ID"`
+	AttributeName    string `json:"attribute_name"     description:"属性名称"`
+	AttributeValueId int64  `json:"attribute_value_id" description:"引用属性值字典ID"`
+	Value            string `json:"value"              description:"属性值"`
+}
+type ProductsGetAttributesRes struct {
+	List []*ProductsAttributeItem `json:"list"`
+}
+
+type ProductsUpdateAttributesReq struct {
+	g.Meta `path:"/products/{id}/attributes" tags:"Products" method:"put" summary:"更新商品属性（全量替换）"`
+
+	Id         int64                  `json:"id"         v:"required"`
+	Attributes []CreateProductAttrItem `json:"attributes" v:"required" description:"新的属性值列表，全量替换"`
+}
+type ProductsUpdateAttributesRes struct{}
+
+type ProductsEnrichedDetailReq struct {
+	g.Meta `path:"/products/enriched/{id}" tags:"Products" method:"get" summary:"商品富化详情（含SKU/规格/库存/描述）"`
+	Id     int64 `json:"id"`
+}
+type ProductsEnrichedDetailRes struct {
+	*ProductsDetailRes
+}
+
 type ProductsDetailPureReq struct {
 	g.Meta `path:"/products/pure/{id}" tags:"Products" method:"get" summary:"商品详情(纯实体,不含聚合)"`
 	Id     int64 `json:"id"`
 }
 type ProductsDetailPureRes struct {
 	*entity.Products
-}
-
-type ProductsCreateReq struct {
-	g.Meta `path:"/products" tags:"Products" method:"post" summary:"新增商品"`
-
-	Name       string `json:"name"        v:"required|length:1,200" description:"商品名称"`
-	Subtitle   string `json:"subtitle"    description:"副标题"`
-	CategoryId int64  `json:"category_id" v:"required"             description:"类目ID"`
-	BrandId    int64  `json:"brand_id"    description:"品牌ID"`
-	Unit       string `json:"unit"        description:"单位"`
-	MainImage  string `json:"main_image"  v:"required"             description:"主图"`
-	Images     string `json:"images"      description:"附图JSON"`
-	VideoUrl   string `json:"video_url"   description:"视频URL"`
-	SortOrder  int    `json:"sort_order"  description:"排序权重"`
-	Status     int    `json:"status"      description:"状态"`
-	CreatedBy  string `json:"created_by"  description:"创建人"`
-}
-type ProductsCreateRes struct {
-	Id int64 `json:"id"`
 }
 
 type ProductsUpdateReq struct {

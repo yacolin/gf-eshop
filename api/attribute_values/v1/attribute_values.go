@@ -56,6 +56,14 @@ type AttributeValuesUpdateReq struct {
 }
 type AttributeValuesUpdateRes struct{}
 
+type AttributeValuesListByAttrReq struct {
+	g.Meta `path:"/attributes/{id}/values" tags:"Attributes" method:"get" summary:"获取属性值列表（按属性ID）"`
+	Id     int64 `json:"id" v:"required"`
+}
+type AttributeValuesListByAttrRes struct {
+	List []*entity.AttributeValues `json:"list"`
+}
+
 type AttributeValuesDeleteReq struct {
 	g.Meta `path:"/attribute_values/{id}" tags:"AttributeValues" method:"delete" summary:"删除属性值"`
 	Id     int64 `json:"id" v:"required"`

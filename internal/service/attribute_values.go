@@ -12,6 +12,7 @@ type IAttributeValues interface {
 	Create(ctx context.Context, req *v1.AttributeValuesCreateReq) (res *v1.AttributeValuesCreateRes, err error)
 	Update(ctx context.Context, req *v1.AttributeValuesUpdateReq) (res *v1.AttributeValuesUpdateRes, err error)
 	Delete(ctx context.Context, req *v1.AttributeValuesDeleteReq) (res *v1.AttributeValuesDeleteRes, err error)
+	ListByAttr(ctx context.Context, req *v1.AttributeValuesListByAttrReq) (res *v1.AttributeValuesListByAttrRes, err error)
 }
 
 var localAttributeValues IAttributeValues
