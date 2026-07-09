@@ -20,22 +20,30 @@ type ReviewAuditLogsDao struct {
 
 // ReviewAuditLogsColumns defines and stores column names for table rev_review_audit_logs.
 type ReviewAuditLogsColumns struct {
-	Id         string // 主键
-	ReviewId   string // 评价ID
-	Action     string // 操作：submit/approve/reject/delete
-	OperatorId string // 操作人ID
-	Remark     string // 操作备注
-	CreatedAt  string //
+	Id           string // 主键
+	ReviewId     string // 评价ID
+	Action       string // 操作：submit/approve/reject/delete/shield
+	OperatorId   string // 操作人ID
+	OperatorName string // 操作人名称
+	BeforeStatus string // 变更前状态
+	AfterStatus  string // 变更后状态
+	Remark       string // 操作备注
+	Snapshot     string // 评价快照（用于回溯）
+	CreatedAt    string //
 }
 
 // reviewAuditLogsColumns holds the columns for table rev_review_audit_logs.
 var reviewAuditLogsColumns = ReviewAuditLogsColumns{
-	Id:         "id",
-	ReviewId:   "review_id",
-	Action:     "action",
-	OperatorId: "operator_id",
-	Remark:     "remark",
-	CreatedAt:  "created_at",
+	Id:           "id",
+	ReviewId:     "review_id",
+	Action:       "action",
+	OperatorId:   "operator_id",
+	OperatorName: "operator_name",
+	BeforeStatus: "before_status",
+	AfterStatus:  "after_status",
+	Remark:       "remark",
+	Snapshot:     "snapshot",
+	CreatedAt:    "created_at",
 }
 
 // NewReviewAuditLogsDao creates and returns a new DAO object for table data access.

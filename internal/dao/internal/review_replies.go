@@ -20,26 +20,32 @@ type ReviewRepliesDao struct {
 
 // ReviewRepliesColumns defines and stores column names for table rev_review_replies.
 type ReviewRepliesColumns struct {
-	Id         string // 回复ID
-	ReviewId   string // 关联评价ID
-	ParentId   string // 父级回复ID（支持多级回复）
-	ReplyType  string // 1-商家回复 2-用户追问 3-平台回复
-	Content    string // 回复内容
-	OperatorId string // 操作人ID
-	CreatedAt  string //
-	DeletedAt  string //
+	Id           string // 回复ID
+	ReviewId     string // 关联评价ID
+	RootReplyId  string // 根回复ID（一级回复为NULL）
+	ParentId     string // 父级回复ID（支持二级回复）
+	ReplyType    string // 1-商家回复 2-用户追问 3-平台回复
+	Content      string // 回复内容
+	OperatorId   string // 操作人ID
+	OperatorName string // 操作人名称（冗余，避免JOIN用户表）
+	Status       string // 1-正常 2-隐藏 3-删除
+	CreatedAt    string //
+	UpdatedAt    string //
 }
 
 // reviewRepliesColumns holds the columns for table rev_review_replies.
 var reviewRepliesColumns = ReviewRepliesColumns{
-	Id:         "id",
-	ReviewId:   "review_id",
-	ParentId:   "parent_id",
-	ReplyType:  "reply_type",
-	Content:    "content",
-	OperatorId: "operator_id",
-	CreatedAt:  "created_at",
-	DeletedAt:  "deleted_at",
+	Id:           "id",
+	ReviewId:     "review_id",
+	RootReplyId:  "root_reply_id",
+	ParentId:     "parent_id",
+	ReplyType:    "reply_type",
+	Content:      "content",
+	OperatorId:   "operator_id",
+	OperatorName: "operator_name",
+	Status:       "status",
+	CreatedAt:    "created_at",
+	UpdatedAt:    "updated_at",
 }
 
 // NewReviewRepliesDao creates and returns a new DAO object for table data access.

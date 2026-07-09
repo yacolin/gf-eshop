@@ -16,6 +16,10 @@ type ReviewMedia struct {
 	ReviewId  interface{} // 关联评价ID
 	MediaType interface{} // 1-图片 2-视频
 	MediaUrl  interface{} // 媒体文件URL
+	FileSize  interface{} // 文件大小（字节）
+	Width     interface{} // 宽度（图片/视频）
+	Height    interface{} // 高度（图片/视频）
+	Duration  interface{} // 时长（视频，秒）
 	SortOrder interface{} // 排序
 	CreatedAt *gtime.Time //
 }

@@ -24,6 +24,10 @@ type ReviewMediaColumns struct {
 	ReviewId  string // 关联评价ID
 	MediaType string // 1-图片 2-视频
 	MediaUrl  string // 媒体文件URL
+	FileSize  string // 文件大小（字节）
+	Width     string // 宽度（图片/视频）
+	Height    string // 高度（图片/视频）
+	Duration  string // 时长（视频，秒）
 	SortOrder string // 排序
 	CreatedAt string //
 }
@@ -34,6 +38,10 @@ var reviewMediaColumns = ReviewMediaColumns{
 	ReviewId:  "review_id",
 	MediaType: "media_type",
 	MediaUrl:  "media_url",
+	FileSize:  "file_size",
+	Width:     "width",
+	Height:    "height",
+	Duration:  "duration",
 	SortOrder: "sort_order",
 	CreatedAt: "created_at",
 }

@@ -21,32 +21,37 @@ type ReviewsDao struct {
 // ReviewsColumns defines and stores column names for table rev_reviews.
 type ReviewsColumns struct {
 	Id              string // 评价ID
-	UserId          string // 用户ID（冗余，便于查询）
+	ReviewNo        string // 评价业务单号（幂等键）
+	UserId          string // 用户ID
 	OrderId         string // 订单ID（校验必须已购）
 	OrderItemId     string // 订单明细ID（用于区分同订单多商品）
 	SpuId           string // 商品SPU ID
-	SkuId           string // 商品SKU ID（若评价具体规格则填）
+	SkuId           string // 商品SKU ID
 	MerchantId      string // 所属商家ID
 	OverallRating   string // 总体评分（1-5星）
-	QualityRating   string // 质量评分（1-5）
-	LogisticsRating string // 物流评分（1-5）
-	ServiceRating   string // 服务评分（1-5）
+	QualityRating   string // 质量评分
+	LogisticsRating string // 物流评分
+	ServiceRating   string // 服务评分
 	Content         string // 评价文字内容
+	ContentLength   string // 内容长度（冗余，用于筛选优质评价）
 	IsAnonymous     string // 是否匿名 0-否 1-是
-	Status          string // 0-待审核 1-审核通过 2-审核拒绝 3-用户删除
-	RejectReason    string // 拒绝原因（审核不通过时填写）
-	LatestReplyId   string // 最新回复ID
-	ReplyCount      string // 回复总数
-	LikeCount       string // 点赞数
-	HelpfulCount    string // 有用数
+	HasMedia        string // 是否包含媒体 0-否 1-是
+	Status          string // 0-待审核 1-审核通过 2-审核拒绝 3-用户删除 4-平台屏蔽
+	RiskLevel       string // 风险等级 0-正常 1-低风险 2-高风险
+	RejectReason    string // 拒绝原因
+	AuditedBy       string // 审核人ID
+	AuditedAt       string // 审核时间
+	LikeCount       string // 点赞数（异步校准）
+	HelpfulCount    string // 有用数（异步校准）
+	ReplyCount      string // 回复总数（异步校准）
 	CreatedAt       string //
 	UpdatedAt       string //
-	DeletedAt       string // 软删除
 }
 
 // reviewsColumns holds the columns for table rev_reviews.
 var reviewsColumns = ReviewsColumns{
 	Id:              "id",
+	ReviewNo:        "review_no",
 	UserId:          "user_id",
 	OrderId:         "order_id",
 	OrderItemId:     "order_item_id",
@@ -58,16 +63,19 @@ var reviewsColumns = ReviewsColumns{
 	LogisticsRating: "logistics_rating",
 	ServiceRating:   "service_rating",
 	Content:         "content",
+	ContentLength:   "content_length",
 	IsAnonymous:     "is_anonymous",
+	HasMedia:        "has_media",
 	Status:          "status",
+	RiskLevel:       "risk_level",
 	RejectReason:    "reject_reason",
-	LatestReplyId:   "latest_reply_id",
-	ReplyCount:      "reply_count",
+	AuditedBy:       "audited_by",
+	AuditedAt:       "audited_at",
 	LikeCount:       "like_count",
 	HelpfulCount:    "helpful_count",
+	ReplyCount:      "reply_count",
 	CreatedAt:       "created_at",
 	UpdatedAt:       "updated_at",
-	DeletedAt:       "deleted_at",
 }
 
 // NewReviewsDao creates and returns a new DAO object for table data access.

@@ -233,8 +233,7 @@ func (s *sReviews) CreateReply(ctx context.Context, req *v1.ReviewsCreateReplyRe
 
 	_, err = dao.Reviews.Ctx(ctx).
 		Data(g.Map{
-			dao.Reviews.Columns().LatestReplyId: replyId,
-			dao.Reviews.Columns().ReplyCount:    gdb.Raw("reply_count + 1"),
+			dao.Reviews.Columns().ReplyCount: gdb.Raw("reply_count + 1"),
 		}).
 		Where(dao.Reviews.Columns().Id, req.Id).
 		Update()
