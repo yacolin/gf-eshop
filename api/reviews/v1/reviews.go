@@ -95,6 +95,7 @@ type ReviewsCreateReplyReq struct {
 	Id        int64  `json:"id"         v:"required"`
 	Content   string `json:"content"    v:"required"`
 	ReplyType int    `json:"reply_type"`
+	ParentId  int64  `json:"parent_id"  description:"父级回复ID（二级回复时传入）"`
 }
 type ReviewsCreateReplyRes struct {
 	Id int64 `json:"id"`

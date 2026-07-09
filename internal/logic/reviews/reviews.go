@@ -2,9 +2,14 @@ package reviews
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"time"
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/os/gtime"
 
 	"gf-eshop/api/reviews/v1"
 	"gf-eshop/internal/dao"
@@ -12,7 +17,12 @@ import (
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
+	"gf-eshop/utility"
 )
+
+func generateReviewNo() string {
+	return fmt.Sprintf("REV%d%04d", time.Now().UnixMilli(), rand.Intn(10000))
+}
 
 type sReviews struct{}
 
@@ -81,8 +91,15 @@ func (s *sReviews) Detail(ctx context.Context, req *v1.ReviewsDetailReq) (res *v
 }
 
 func (s *sReviews) Create(ctx context.Context, req *v1.ReviewsCreateReq) (res *v1.ReviewsCreateRes, err error) {
+	userID := g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64()
+	contentLen := len([]rune(req.Content))
+	if contentLen > 32767 {
+		contentLen = 32767
+	}
+
 	result, err := dao.Reviews.Ctx(ctx).Insert(do.Reviews{
-		UserId:          g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64(),
+		UserId:          userID,
+		ReviewNo:        generateReviewNo(),
 		OrderId:         req.OrderId,
 		OrderItemId:     req.OrderItemId,
 		SpuId:           req.SpuId,
@@ -92,6 +109,7 @@ func (s *sReviews) Create(ctx context.Context, req *v1.ReviewsCreateReq) (res *v
 		LogisticsRating: req.LogisticsRating,
 		ServiceRating:   req.ServiceRating,
 		Content:         req.Content,
+		ContentLength:   contentLen,
 		IsAnonymous:     req.IsAnonymous,
 		Status:          0,
 	})
@@ -100,10 +118,15 @@ func (s *sReviews) Create(ctx context.Context, req *v1.ReviewsCreateReq) (res *v
 	}
 	id, _ := result.LastInsertId()
 
+	created := entity.Reviews{Id: id, Status: 0}
+	snapshot, _ := json.Marshal(created)
+
 	_, err = dao.ReviewAuditLogs.Ctx(ctx).Insert(do.ReviewAuditLogs{
-		ReviewId:   id,
-		Action:     "submit",
-		OperatorId: g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64(),
+		ReviewId:     id,
+		Action:       "submit",
+		OperatorId:   userID,
+		AfterStatus:  0,
+		Snapshot:     string(snapshot),
 	})
 	if err != nil {
 		return nil, err
@@ -136,13 +159,21 @@ func (s *sReviews) Update(ctx context.Context, req *v1.ReviewsUpdateReq) (res *v
 }
 
 func (s *sReviews) Delete(ctx context.Context, req *v1.ReviewsDeleteReq) (res *v1.ReviewsDeleteRes, err error) {
-	var review *entity.Reviews
+	var review entity.Reviews
 	err = dao.Reviews.Ctx(ctx).Where(dao.Reviews.Columns().Id, req.Id).Scan(&review)
 	if err != nil {
 		return nil, err
 	}
-	if review == nil {
+	if review.Id == 0 {
 		return nil, errcode.ErrReviewNotFound
+	}
+
+	claims := utility.GetUserClaims(ctx)
+	operatorID := int64(0)
+	operatorName := ""
+	if claims != nil {
+		operatorID = claims.UserId
+		operatorName = claims.Username
 	}
 
 	_, err = dao.Reviews.Ctx(ctx).Data(do.Reviews{
@@ -152,15 +183,16 @@ func (s *sReviews) Delete(ctx context.Context, req *v1.ReviewsDeleteReq) (res *v
 		return nil, err
 	}
 
-	_, err = dao.Reviews.Ctx(ctx).Where(dao.Reviews.Columns().Id, req.Id).Delete()
-	if err != nil {
-		return nil, err
-	}
+	snapshot, _ := json.Marshal(review)
 
 	_, err = dao.ReviewAuditLogs.Ctx(ctx).Insert(do.ReviewAuditLogs{
-		ReviewId:   req.Id,
-		Action:     "delete",
-		OperatorId: g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64(),
+		ReviewId:     req.Id,
+		Action:       "delete",
+		OperatorId:   operatorID,
+		OperatorName: operatorName,
+		BeforeStatus: review.Status,
+		AfterStatus:  3,
+		Snapshot:     string(snapshot),
 	})
 	if err != nil {
 		return nil, err
@@ -170,17 +202,28 @@ func (s *sReviews) Delete(ctx context.Context, req *v1.ReviewsDeleteReq) (res *v
 }
 
 func (s *sReviews) Audit(ctx context.Context, req *v1.ReviewsAuditReq) (res *v1.ReviewsAuditRes, err error) {
-	count, err := dao.Reviews.Ctx(ctx).Where(dao.Reviews.Columns().Id, req.Id).Count()
+	var review entity.Reviews
+	err = dao.Reviews.Ctx(ctx).Where(dao.Reviews.Columns().Id, req.Id).Scan(&review)
 	if err != nil {
 		return nil, err
 	}
-	if count == 0 {
+	if review.Id == 0 {
 		return nil, errcode.ErrReviewNotFound
+	}
+
+	claims := utility.GetUserClaims(ctx)
+	operatorID := int64(0)
+	operatorName := ""
+	if claims != nil {
+		operatorID = claims.UserId
+		operatorName = claims.Username
 	}
 
 	_, err = dao.Reviews.Ctx(ctx).Data(do.Reviews{
 		Status:       req.Status,
 		RejectReason: req.RejectReason,
+		AuditedBy:    operatorID,
+		AuditedAt:    gtime.Now(),
 	}).Where(dao.Reviews.Columns().Id, req.Id).Update()
 	if err != nil {
 		return nil, err
@@ -191,11 +234,17 @@ func (s *sReviews) Audit(ctx context.Context, req *v1.ReviewsAuditReq) (res *v1.
 		action = "reject"
 	}
 
+	snapshot, _ := json.Marshal(review)
+
 	_, err = dao.ReviewAuditLogs.Ctx(ctx).Insert(do.ReviewAuditLogs{
-		ReviewId:   req.Id,
-		Action:     action,
-		OperatorId: g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64(),
-		Remark:     req.RejectReason,
+		ReviewId:     req.Id,
+		Action:       action,
+		OperatorId:   operatorID,
+		OperatorName: operatorName,
+		BeforeStatus: review.Status,
+		AfterStatus:  req.Status,
+		Remark:       req.RejectReason,
+		Snapshot:     string(snapshot),
 	})
 	if err != nil {
 		return nil, err
@@ -220,11 +269,36 @@ func (s *sReviews) ListReplies(ctx context.Context, req *v1.ReviewsListRepliesRe
 }
 
 func (s *sReviews) CreateReply(ctx context.Context, req *v1.ReviewsCreateReplyReq) (res *v1.ReviewsCreateReplyRes, err error) {
+	claims := utility.GetUserClaims(ctx)
+	operatorID := int64(0)
+	operatorName := ""
+	if claims != nil {
+		operatorID = claims.UserId
+		operatorName = claims.Username
+	}
+
+	rootReplyId := int64(0)
+	if req.ParentId > 0 {
+		var parent entity.ReviewReplies
+		err := dao.ReviewReplies.Ctx(ctx).Where(dao.ReviewReplies.Columns().Id, req.ParentId).Scan(&parent)
+		if err == nil && parent.Id > 0 {
+			if parent.RootReplyId > 0 {
+				rootReplyId = parent.RootReplyId
+			} else {
+				rootReplyId = parent.Id
+			}
+		}
+	}
+
 	result, err := dao.ReviewReplies.Ctx(ctx).Insert(do.ReviewReplies{
-		ReviewId:   req.Id,
-		ReplyType:  req.ReplyType,
-		Content:    req.Content,
-		OperatorId: g.RequestFromCtx(ctx).GetCtxVar("user_id").Int64(),
+		ReviewId:     req.Id,
+		RootReplyId:  rootReplyId,
+		ParentId:     req.ParentId,
+		ReplyType:    req.ReplyType,
+		Content:      req.Content,
+		OperatorId:   operatorID,
+		OperatorName: operatorName,
+		Status:       1,
 	})
 	if err != nil {
 		return nil, err
