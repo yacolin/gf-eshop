@@ -15,7 +15,7 @@ type MerchantUsers struct {
 	Id          interface{} // 主键
 	MerchantId  interface{} // 商家ID
 	StaffId     interface{} // 员工ID（关联 sys_staff.id）
-	RoleId      interface{} // 商家角色ID（关联 mch_roles.id，与平台RBAC隔离）
+	RoleId      interface{} // 商家角色ID（关联 mch_merchant_roles.id，与平台RBAC隔离）
 	Status      interface{} // 1-正常 2-禁用
 	InvitedAt   *gtime.Time // 邀请时间
 	LastLoginAt *gtime.Time // 最后登录时间

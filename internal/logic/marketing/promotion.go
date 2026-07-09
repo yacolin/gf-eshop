@@ -194,6 +194,29 @@ func (s *sMarketing) enrichProducts(ctx context.Context, products []*entity.Prom
 		}
 	}
 
+	// 批量查询 SKU 价格区间
+	type priceRow struct {
+		ProductId int64 `orm:"product_id"`
+		MinPrice  int64 `orm:"min_price"`
+		MaxPrice  int64 `orm:"max_price"`
+	}
+	priceMap := make(map[int64]struct{ min, max int64 })
+	if len(spuIDs) > 0 {
+		var rows []priceRow
+		err := g.DB().Model("sp_skus").
+			Fields("product_id", "MIN(price) AS min_price", "MAX(price) AS max_price").
+			Where("product_id IN (?)", spuIDs).
+			Where("status", 1).
+			Where("deleted_at IS NULL").
+			Group("product_id").
+			Scan(&rows)
+		if err == nil {
+			for _, r := range rows {
+				priceMap[r.ProductId] = struct{ min, max int64 }{min: r.MinPrice, max: r.MaxPrice}
+			}
+		}
+	}
+
 	items := make([]*v1.PromotionProductItem, 0, len(products))
 	for _, pp := range products {
 		item := &v1.PromotionProductItem{
@@ -208,6 +231,10 @@ func (s *sMarketing) enrichProducts(ctx context.Context, products []*entity.Prom
 			item.Unit = spu.Unit
 			item.SalesCount = spu.SalesCount
 			item.SpuStatus = spu.Status
+		}
+		if pr, ok := priceMap[pp.TargetId]; ok {
+			item.MinPrice = pr.min
+			item.MaxPrice = pr.max
 		}
 		items = append(items, item)
 	}

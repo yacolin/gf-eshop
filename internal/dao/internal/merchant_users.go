@@ -23,7 +23,7 @@ type MerchantUsersColumns struct {
 	Id          string // 主键
 	MerchantId  string // 商家ID
 	StaffId     string // 员工ID（关联 sys_staff.id）
-	RoleId      string // 商家角色ID（关联 mch_roles.id，与平台RBAC隔离）
+	RoleId      string // 商家角色ID（关联 mch_merchant_roles.id，与平台RBAC隔离）
 	Status      string // 1-正常 2-禁用
 	InvitedAt   string // 邀请时间
 	LastLoginAt string // 最后登录时间

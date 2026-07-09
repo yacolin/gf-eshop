@@ -22,7 +22,7 @@ type MerchantRolePermissionsDao struct {
 type MerchantRolePermissionsColumns struct {
 	Id             string // 主键
 	MerchantId     string // 商家ID
-	RoleId         string // 角色ID（关联 mch_roles.id）
+	RoleId         string // 角色ID（关联 mch_merchant_roles.id）
 	PermissionName string // 权限标识（对应 sys_permissions.name）
 	CreatedAt      string //
 	DeletedAt      string //

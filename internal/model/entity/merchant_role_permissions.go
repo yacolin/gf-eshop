@@ -12,7 +12,7 @@ import (
 type MerchantRolePermissions struct {
 	Id             int64       `json:"id"              description:"主键"`
 	MerchantId     int64       `json:"merchant_id"     description:"商家ID"`
-	RoleId         int64       `json:"role_id"         description:"角色ID（关联 mch_roles.id）"`
+	RoleId         int64       `json:"role_id"         description:"角色ID（关联 mch_merchant_roles.id）"`
 	PermissionName string      `json:"permission_name" description:"权限标识（对应 sys_permissions.name）"`
 	CreatedAt      *gtime.Time `json:"created_at"      description:""`
 	DeletedAt      *gtime.Time `json:"deleted_at"      description:""`
