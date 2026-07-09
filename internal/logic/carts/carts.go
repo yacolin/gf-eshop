@@ -240,7 +240,7 @@ func (s *sCarts) AddItem(ctx context.Context, req *v1.CartsAddItemReq) (res *v1.
 	// 获取商品名称
 	var product entity.Products
 	_ = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id, sku.ProductId).Scan(&product)
-	productName := sku.Spec
+	productName := sku.SpecSummary
 	if product.Id > 0 && product.Name != "" {
 		productName = product.Name
 	}
@@ -260,7 +260,7 @@ func (s *sCarts) AddItem(ctx context.Context, req *v1.CartsAddItemReq) (res *v1.
 			SkuID:       sku.Id,
 			ProductID:   sku.ProductId,
 			ProductName: productName,
-			SkuSpec:     sku.Spec,
+			SkuSpec:     sku.SpecSummary,
 			Image:       sku.Image,
 			Price:       sku.Price,
 			Quantity:    req.Quantity,

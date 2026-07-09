@@ -25,6 +25,7 @@ type Refunds struct {
 	ChannelRefundId interface{} // 渠道退款交易号
 	FailureReason   interface{} // 失败原因
 	ChannelResponse interface{} // 渠道退款响应/回调摘要
+	IdempotencyKey  interface{} // 退款幂等键
 	AppliedAt       *gtime.Time // 申请时间
 	SuccessAt       *gtime.Time // 退款成功时间
 	NotifyAt        *gtime.Time // 最近一次退款回调时间

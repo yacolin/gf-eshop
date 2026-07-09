@@ -33,6 +33,7 @@ type RefundsColumns struct {
 	ChannelRefundId string // 渠道退款交易号
 	FailureReason   string // 失败原因
 	ChannelResponse string // 渠道退款响应/回调摘要
+	IdempotencyKey  string // 退款幂等键
 	AppliedAt       string // 申请时间
 	SuccessAt       string // 退款成功时间
 	NotifyAt        string // 最近一次退款回调时间
@@ -56,6 +57,7 @@ var refundsColumns = RefundsColumns{
 	ChannelRefundId: "channel_refund_id",
 	FailureReason:   "failure_reason",
 	ChannelResponse: "channel_response",
+	IdempotencyKey:  "idempotency_key",
 	AppliedAt:       "applied_at",
 	SuccessAt:       "success_at",
 	NotifyAt:        "notify_at",

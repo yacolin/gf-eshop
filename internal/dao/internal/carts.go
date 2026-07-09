@@ -20,26 +20,22 @@ type CartsDao struct {
 
 // CartsColumns defines and stores column names for table tx_carts.
 type CartsColumns struct {
-	Id          string // 购物车ID
-	UserId      string // 用户ID（已登录用户）
-	SessionId   string // 会话ID（未登录时的临时标识）
-	ItemCount   string // 商品种类数
-	TotalAmount string // 总金额（分，聚合，减少查SKU次数）
-	ExpiredAt   string // 过期时间（session 型购物车自动清理）
-	CreatedAt   string //
-	UpdatedAt   string //
+	Id        string // 购物车ID
+	UserId    string // 用户ID（已登录用户）
+	SessionId string // 会话ID（未登录时的临时标识）
+	ExpiredAt string // 过期时间（session 型购物车自动清理）
+	CreatedAt string //
+	UpdatedAt string //
 }
 
 // cartsColumns holds the columns for table tx_carts.
 var cartsColumns = CartsColumns{
-	Id:          "id",
-	UserId:      "user_id",
-	SessionId:   "session_id",
-	ItemCount:   "item_count",
-	TotalAmount: "total_amount",
-	ExpiredAt:   "expired_at",
-	CreatedAt:   "created_at",
-	UpdatedAt:   "updated_at",
+	Id:        "id",
+	UserId:    "user_id",
+	SessionId: "session_id",
+	ExpiredAt: "expired_at",
+	CreatedAt: "created_at",
+	UpdatedAt: "updated_at",
 }
 
 // NewCartsDao creates and returns a new DAO object for table data access.

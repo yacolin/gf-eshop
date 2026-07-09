@@ -23,6 +23,7 @@ type Refunds struct {
 	ChannelRefundId string      `json:"channel_refund_id" description:"渠道退款交易号"`
 	FailureReason   string      `json:"failure_reason"    description:"失败原因"`
 	ChannelResponse string      `json:"channel_response"  description:"渠道退款响应/回调摘要"`
+	IdempotencyKey  string      `json:"idempotency_key"   description:"退款幂等键"`
 	AppliedAt       *gtime.Time `json:"applied_at"        description:"申请时间"`
 	SuccessAt       *gtime.Time `json:"success_at"        description:"退款成功时间"`
 	NotifyAt        *gtime.Time `json:"notify_at"         description:"最近一次退款回调时间"`

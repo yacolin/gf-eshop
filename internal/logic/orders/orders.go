@@ -102,7 +102,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			if err != nil {
 				return err
 			}
-			productName := sku.Spec
+			productName := sku.SpecSummary
 			if product.Id > 0 && product.Name != "" {
 				productName = product.Name
 			}
@@ -125,7 +125,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 				ProductId:   sku.ProductId,
 				SkuCode:     sku.SkuCode,
 				ProductName: productName,
-				SkuSpec:     sku.Spec,
+				SkuSpec:     sku.SpecSummary,
 				Image:       sku.Image,
 				Price:       sku.Price,
 				Quantity:    ri.Quantity,

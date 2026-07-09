@@ -11,13 +11,11 @@ import (
 
 // Carts is the golang structure of table tx_carts for DAO operations like Where/Data.
 type Carts struct {
-	g.Meta      `orm:"table:tx_carts, do:true"`
-	Id          interface{} // 购物车ID
-	UserId      interface{} // 用户ID（已登录用户）
-	SessionId   interface{} // 会话ID（未登录时的临时标识）
-	ItemCount   interface{} // 商品种类数
-	TotalAmount interface{} // 总金额（分，聚合，减少查SKU次数）
-	ExpiredAt   *gtime.Time // 过期时间（session 型购物车自动清理）
-	CreatedAt   *gtime.Time //
-	UpdatedAt   *gtime.Time //
+	g.Meta    `orm:"table:tx_carts, do:true"`
+	Id        interface{} // 购物车ID
+	UserId    interface{} // 用户ID（已登录用户）
+	SessionId interface{} // 会话ID（未登录时的临时标识）
+	ExpiredAt *gtime.Time // 过期时间（session 型购物车自动清理）
+	CreatedAt *gtime.Time //
+	UpdatedAt *gtime.Time //
 }
