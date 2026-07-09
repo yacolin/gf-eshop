@@ -79,12 +79,10 @@ var (
 				// 启动时缓存预热（并行管线）
 				pipeline := productsLogic.NewWarmupPipeline(
 					productsLogic.NewFuncStage("brands", func(ctx context.Context) (int, error) {
-						brandsLogic.Warmup(ctx)
-						return 0, nil
+						return brandsLogic.Warmup(ctx)
 					}),
 					productsLogic.NewFuncStage("categories", func(ctx context.Context) (int, error) {
-						categoriesLogic.Warmup(ctx)
-						return 0, nil
+						return categoriesLogic.Warmup(ctx)
 					}),
 					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
 						return productsLogic.Warmup(ctx)

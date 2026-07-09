@@ -114,7 +114,7 @@ func ensureBrandCache(ctx context.Context) {
 		rebuilding["brands"] = ch
 		rebuildMu.Unlock()
 
-		_ = rebuildBrandCache(context.Background())
+		_, _ = rebuildBrandCache(context.Background())
 
 		rebuildMu.Lock()
 		delete(rebuilding, "brands")
@@ -138,13 +138,13 @@ func removeBrandFromIndex(ctx context.Context, id int64) {
 
 // --- 缓存重建 ---
 
-func rebuildBrandCache(ctx context.Context) error {
+func rebuildBrandCache(ctx context.Context) (int, error) {
 	var list []*entity.Brands
 	if err := dao.Brands.Ctx(ctx).OrderAsc(dao.Brands.Columns().SortOrder).Scan(&list); err != nil {
-		return err
+		return 0, err
 	}
 	if len(list) == 0 {
-		return nil
+		return 0, nil
 	}
 	g.Redis().Do(ctx, "DEL", brandIdsKey)
 	for _, b := range list {
@@ -154,16 +154,18 @@ func rebuildBrandCache(ctx context.Context) error {
 	}
 	// ZSET 与实体缓存同步过期
 	g.Redis().Do(ctx, "EXPIRE", brandIdsKey, int(brandIdsTTL.Seconds()))
-	return nil
+	return len(list), nil
 }
 
 // Warmup 启动预热
-func Warmup(ctx context.Context) {
-	if err := rebuildBrandCache(ctx); err != nil {
+func Warmup(ctx context.Context) (int, error) {
+	n, err := rebuildBrandCache(ctx)
+	if err != nil {
 		g.Log().Warningf(ctx, "brand cache warmup failed: %v", err)
-		return
+		return 0, err
 	}
 	g.Log().Infof(ctx, "brand cache warmed up")
+	return n, nil
 }
 
 // --- 单条缓存 ---

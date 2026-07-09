@@ -110,7 +110,7 @@ func ensureCategoryCache(ctx context.Context) {
 		catRebuilding["categories"] = ch
 		catRebuildMu.Unlock()
 
-		_ = rebuildCategoryCache(context.Background())
+		_, _ = rebuildCategoryCache(context.Background())
 
 		catRebuildMu.Lock()
 		delete(catRebuilding, "categories")
@@ -134,13 +134,13 @@ func removeCategoryFromIndex(ctx context.Context, id int64) {
 
 // --- 缓存重建 ---
 
-func rebuildCategoryCache(ctx context.Context) error {
+func rebuildCategoryCache(ctx context.Context) (int, error) {
 	var list []*entity.Categories
 	if err := dao.Categories.Ctx(ctx).OrderAsc(dao.Categories.Columns().SortOrder).Scan(&list); err != nil {
-		return err
+		return 0, err
 	}
 	if len(list) == 0 {
-		return nil
+		return 0, nil
 	}
 	g.Redis().Do(ctx, "DEL", categoryIdsKey)
 	for _, c := range list {
@@ -149,15 +149,17 @@ func rebuildCategoryCache(ctx context.Context) error {
 		g.Redis().Do(ctx, "SETEX", cacheKeyCategory(c.Id), int(categoryEntityTTL.Seconds()), string(data))
 	}
 	g.Redis().Do(ctx, "EXPIRE", categoryIdsKey, int(categoryIdsTTL.Seconds()))
-	return nil
+	return len(list), nil
 }
 
-func Warmup(ctx context.Context) {
-	if err := rebuildCategoryCache(ctx); err != nil {
+func Warmup(ctx context.Context) (int, error) {
+	n, err := rebuildCategoryCache(ctx)
+	if err != nil {
 		g.Log().Warningf(ctx, "category cache warmup failed: %v", err)
-		return
+		return 0, err
 	}
 	g.Log().Infof(ctx, "category cache warmed up")
+	return n, nil
 }
 
 // --- 单条缓存 ---
