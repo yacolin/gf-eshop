@@ -3,6 +3,8 @@ package inventories
 import (
 	"context"
 
+	"github.com/gogf/gf/v2/frame/g"
+
 	"gf-eshop/api/inventories/v1"
 	"gf-eshop/internal/service"
 )
@@ -45,4 +47,24 @@ func (c *ControllerV1) Restock(ctx context.Context, req *v1.InventoriesRestockRe
 
 func (c *ControllerV1) GetStock(ctx context.Context, req *v1.InventoriesGetStockReq) (res *v1.InventoriesGetStockRes, err error) {
 	return service.Inventories().GetStock(ctx, req)
+}
+
+func (c *ControllerV1) Export(ctx context.Context, req *v1.InventoriesExportReq) (res *v1.InventoriesExportRes, err error) {
+	res, err = service.Inventories().Export(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	r := g.RequestFromCtx(ctx)
+	r.Response.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	r.Response.Header().Set("Content-Disposition", "attachment; filename=inventories.csv")
+	r.Response.Write(res.Data)
+	return res, nil
+}
+
+func (c *ControllerV1) Alerts(ctx context.Context, req *v1.InventoriesAlertsReq) (res *v1.InventoriesAlertsRes, err error) {
+	return service.Inventories().Alerts(ctx, req)
+}
+
+func (c *ControllerV1) AlertResolve(ctx context.Context, req *v1.InventoriesAlertResolveReq) (res *v1.InventoriesAlertResolveRes, err error) {
+	return service.Inventories().AlertResolve(ctx, req)
 }

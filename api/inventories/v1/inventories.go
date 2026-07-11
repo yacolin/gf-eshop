@@ -15,6 +15,7 @@ type InventoriesListReq struct {
 	PageSize    int   `json:"page_size"`
 	SkuId       int64 `json:"sku_id"`
 	WarehouseId int64 `json:"warehouse_id"`
+	Status      *int  `json:"status"`
 }
 type InventoriesListRes struct {
 	List  []*entity.Inventories `json:"list"`
@@ -117,6 +118,35 @@ type InventoriesGetStockReq struct {
 }
 type InventoriesGetStockRes struct {
 	*entity.Inventories
+}
+
+type InventoriesAlertsReq struct {
+	g.Meta `path:"/inventories/alerts" tags:"Inventories" method:"get" summary:"库存预警列表"`
+
+	Page     int `json:"page"`
+	PageSize int `json:"page_size"`
+	Status   *int `json:"status"`
+}
+type InventoriesAlertsRes struct {
+	List  []*entity.Inventories `json:"list"`
+	Total int                  `json:"total"`
+}
+
+type InventoriesAlertResolveReq struct {
+	g.Meta `path:"/inventories/alerts/{id}/resolve" tags:"Inventories" method:"post" summary:"确认预警/忽略"`
+	Id     int64 `json:"id"`
+}
+type InventoriesAlertResolveRes struct{}
+
+type InventoriesExportReq struct {
+	g.Meta `path:"/inventories/export" tags:"Inventories" method:"get" summary:"导出库存列表"`
+
+	SkuId       int64 `json:"sku_id"`
+	WarehouseId int64 `json:"warehouse_id"`
+	Status      *int  `json:"status"`
+}
+type InventoriesExportRes struct {
+	Data []byte `json:"-"`
 }
 
 // --- Warehouses ---

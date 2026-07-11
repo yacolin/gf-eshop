@@ -17,6 +17,9 @@ type IInventoriesV1 interface {
 	Deduct(ctx context.Context, req *v1.InventoriesDeductReq) (res *v1.InventoriesDeductRes, err error)
 	Restock(ctx context.Context, req *v1.InventoriesRestockReq) (res *v1.InventoriesRestockRes, err error)
 	GetStock(ctx context.Context, req *v1.InventoriesGetStockReq) (res *v1.InventoriesGetStockRes, err error)
+	Alerts(ctx context.Context, req *v1.InventoriesAlertsReq) (res *v1.InventoriesAlertsRes, err error)
+	AlertResolve(ctx context.Context, req *v1.InventoriesAlertResolveReq) (res *v1.InventoriesAlertResolveRes, err error)
+	Export(ctx context.Context, req *v1.InventoriesExportReq) (res *v1.InventoriesExportRes, err error)
 }
 
 type Warehouses interface {

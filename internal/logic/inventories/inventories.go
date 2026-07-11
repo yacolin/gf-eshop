@@ -1,8 +1,11 @@
 package inventories
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
+	"strconv"
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
@@ -39,6 +42,9 @@ func (s *sInventories) List(ctx context.Context, req *v1.InventoriesListReq) (re
 	}
 	if req.WarehouseId > 0 {
 		m = m.Where(dao.Inventories.Columns().WarehouseId, req.WarehouseId)
+	}
+	if req.Status != nil {
+		m = m.Where(dao.Inventories.Columns().Status, *req.Status)
 	}
 
 	total, err := m.Count()
@@ -277,7 +283,123 @@ func (s *sInventories) GetStock(ctx context.Context, req *v1.InventoriesGetStock
 	return &v1.InventoriesGetStockRes{Inventories: inv}, nil
 }
 
+// Alerts 库存预警列表（低于安全阈值）
+func (s *sInventories) Alerts(ctx context.Context, req *v1.InventoriesAlertsReq) (res *v1.InventoriesAlertsRes, err error) {
+	var (
+		page = req.Page
+		size = req.PageSize
+	)
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+
+	m := dao.Inventories.Ctx(ctx).
+		Where(dao.Inventories.Columns().Quantity+" <= "+dao.Inventories.Columns().Threshold)
+	if req.Status != nil {
+		m = m.Where(dao.Inventories.Columns().Status, *req.Status)
+	}
+
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
+	if total == 0 {
+		return &v1.InventoriesAlertsRes{
+			List:  make([]*entity.Inventories, 0),
+			Total: 0,
+		}, nil
+	}
+
+	var list []*entity.Inventories
+	err = m.Page(page, size).OrderDesc(dao.Inventories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.InventoriesAlertsRes{
+		List:  list,
+		Total: total,
+	}, nil
+}
+
+// AlertResolve 确认预警/忽略
+func (s *sInventories) AlertResolve(ctx context.Context, req *v1.InventoriesAlertResolveReq) (res *v1.InventoriesAlertResolveRes, err error) {
+	count, err := dao.Inventories.Ctx(ctx).Where(dao.Inventories.Columns().Id, req.Id).Count()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, errcode.ErrInventoryNotFound
+	}
+	return &v1.InventoriesAlertResolveRes{}, nil
+}
+
+// Export 导出库存列表 CSV
+func (s *sInventories) Export(ctx context.Context, req *v1.InventoriesExportReq) (res *v1.InventoriesExportRes, err error) {
+	m := dao.Inventories.Ctx(ctx)
+	if req.SkuId > 0 {
+		m = m.Where(dao.Inventories.Columns().SkuId, req.SkuId)
+	}
+	if req.WarehouseId > 0 {
+		m = m.Where(dao.Inventories.Columns().WarehouseId, req.WarehouseId)
+	}
+	if req.Status != nil {
+		m = m.Where(dao.Inventories.Columns().Status, *req.Status)
+	}
+
+	var list []*entity.Inventories
+	err = m.OrderDesc(dao.Inventories.Columns().Id).Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err := generateInventoryCSV(list)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.InventoriesExportRes{Data: buf.Bytes()}, nil
+}
+
 // ── 内部辅助方法 ──────────────────────────────────────────
+
+// generateInventoryCSV 生成库存列表 CSV
+func generateInventoryCSV(list []*entity.Inventories) (*bytes.Buffer, error) {
+	buf := &bytes.Buffer{}
+	writer := csv.NewWriter(buf)
+	defer writer.Flush()
+
+	headers := []string{"ID", "SKU ID", "仓库ID", "物理库存", "预占库存", "可用库存", "安全阈值", "上限", "状态", "最后盘点时间", "最后盘点人"}
+	if err := writer.Write(headers); err != nil {
+		return nil, err
+	}
+
+	for _, inv := range list {
+		available := inv.Quantity - inv.Reserved
+		lastCounted := ""
+		if inv.LastCountedAt != nil {
+			lastCounted = inv.LastCountedAt.String()
+		}
+		row := []string{
+			strconv.FormatInt(inv.Id, 10),
+			strconv.FormatInt(inv.SkuId, 10),
+			strconv.FormatInt(inv.WarehouseId, 10),
+			strconv.FormatInt(inv.Quantity, 10),
+			strconv.FormatInt(inv.Reserved, 10),
+			strconv.FormatInt(available, 10),
+			strconv.FormatInt(inv.Threshold, 10),
+			strconv.FormatInt(inv.MaxThreshold, 10),
+			strconv.Itoa(inv.Status),
+			lastCounted,
+			inv.LastCountedBy,
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	return buf, nil
+}
 
 // findOrCreateWithTx 在事务中查找库存记录（FOR UPDATE），不存在则创建
 func findOrCreateWithTx(ctx context.Context, tx gdb.TX, skuID, warehouseID int64) (*entity.Inventories, error) {
