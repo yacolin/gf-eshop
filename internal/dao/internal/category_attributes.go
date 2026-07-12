@@ -25,8 +25,8 @@ type CategoryAttributesColumns struct {
 	AttributeId     string // 属性ID
 	Required        string // 该类目下是否必填（仅提示，非强校验）
 	IsDefaultFilter string // 是否作为前台默认筛选项
-	SortOrder       string //
-	CreatedAt       string //
+	SortOrder       string // 排序
+	CreatedAt       string // 创建时间
 }
 
 // categoryAttributesColumns holds the columns for table sp_category_attributes.

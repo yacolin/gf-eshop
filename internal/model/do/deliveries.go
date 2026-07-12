@@ -31,7 +31,7 @@ type Deliveries struct {
 	Status       interface{} // 物流状态：pending-待发货 picked-已拣货 shipped-已发货 delivering-配送中 delivered-已签收 returned-已退回
 	ShippedAt    *gtime.Time // 发货时间
 	DeliveredAt  *gtime.Time // 签收时间
-	CreatedBy    interface{} // 操作人
+	CreatedBy    interface{} // 操作人ID
 	CreatedAt    *gtime.Time //
 	UpdatedAt    *gtime.Time //
 	DeletedAt    *gtime.Time //

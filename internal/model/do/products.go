@@ -31,8 +31,8 @@ type Products struct {
 	SeoTitle       interface{} // SEO标题（自定义title，留空则使用name）
 	SeoKeywords    interface{} // SEO关键词（逗号分隔）
 	SeoDescription interface{} // SEO描述（页面meta description）
-	CreatedBy      interface{} // 创建人（运营工号）
-	UpdatedBy      interface{} // 最后更新人
+	CreatedBy      interface{} // 创建人ID
+	UpdatedBy      interface{} // 最后更新人ID
 	CreatedAt      *gtime.Time // 创建时间
 	UpdatedAt      *gtime.Time // 更新时间
 	DeletedAt      *gtime.Time // 软删除时间（NULL表示未删除）

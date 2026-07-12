@@ -29,7 +29,7 @@ type Deliveries struct {
 	Status       string      `json:"status"        description:"物流状态：pending-待发货 picked-已拣货 shipped-已发货 delivering-配送中 delivered-已签收 returned-已退回"`
 	ShippedAt    *gtime.Time `json:"shipped_at"    description:"发货时间"`
 	DeliveredAt  *gtime.Time `json:"delivered_at"  description:"签收时间"`
-	CreatedBy    string      `json:"created_by"    description:"操作人"`
+	CreatedBy    int64       `json:"created_by"    description:"操作人ID"`
 	CreatedAt    *gtime.Time `json:"created_at"    description:""`
 	UpdatedAt    *gtime.Time `json:"updated_at"    description:""`
 	DeletedAt    *gtime.Time `json:"deleted_at"    description:""`

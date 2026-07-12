@@ -15,6 +15,6 @@ type CategoryAttributes struct {
 	AttributeId     int64       `json:"attribute_id"      description:"属性ID"`
 	Required        int         `json:"required"          description:"该类目下是否必填（仅提示，非强校验）"`
 	IsDefaultFilter int         `json:"is_default_filter" description:"是否作为前台默认筛选项"`
-	SortOrder       int         `json:"sort_order"        description:""`
-	CreatedAt       *gtime.Time `json:"created_at"        description:""`
+	SortOrder       int         `json:"sort_order"        description:"排序"`
+	CreatedAt       *gtime.Time `json:"created_at"        description:"创建时间"`
 }

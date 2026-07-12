@@ -39,7 +39,7 @@ type DeliveriesColumns struct {
 	Status       string // 物流状态：pending-待发货 picked-已拣货 shipped-已发货 delivering-配送中 delivered-已签收 returned-已退回
 	ShippedAt    string // 发货时间
 	DeliveredAt  string // 签收时间
-	CreatedBy    string // 操作人
+	CreatedBy    string // 操作人ID
 	CreatedAt    string //
 	UpdatedAt    string //
 	DeletedAt    string //

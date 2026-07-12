@@ -20,6 +20,6 @@ type LevelRules struct {
 	Description    string      `json:"description"     description:"规则说明"`
 	SortOrder      int         `json:"sort_order"      description:"排序"`
 	Status         int         `json:"status"          description:"状态：0-禁用 1-启用"`
-	CreatedAt      *gtime.Time `json:"created_at"      description:""`
-	UpdatedAt      *gtime.Time `json:"updated_at"      description:""`
+	CreatedAt      *gtime.Time `json:"created_at"      description:"创建时间"`
+	UpdatedAt      *gtime.Time `json:"updated_at"      description:"更新时间"`
 }

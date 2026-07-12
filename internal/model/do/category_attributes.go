@@ -17,6 +17,6 @@ type CategoryAttributes struct {
 	AttributeId     interface{} // 属性ID
 	Required        interface{} // 该类目下是否必填（仅提示，非强校验）
 	IsDefaultFilter interface{} // 是否作为前台默认筛选项
-	SortOrder       interface{} //
-	CreatedAt       *gtime.Time //
+	SortOrder       interface{} // 排序
+	CreatedAt       *gtime.Time // 创建时间
 }

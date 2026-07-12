@@ -39,8 +39,8 @@ type ProductsColumns struct {
 	SeoTitle       string // SEO标题（自定义title，留空则使用name）
 	SeoKeywords    string // SEO关键词（逗号分隔）
 	SeoDescription string // SEO描述（页面meta description）
-	CreatedBy      string // 创建人（运营工号）
-	UpdatedBy      string // 最后更新人
+	CreatedBy      string // 创建人ID
+	UpdatedBy      string // 最后更新人ID
 	CreatedAt      string // 创建时间
 	UpdatedAt      string // 更新时间
 	DeletedAt      string // 软删除时间（NULL表示未删除）

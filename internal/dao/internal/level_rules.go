@@ -30,8 +30,8 @@ type LevelRulesColumns struct {
 	Description    string // 规则说明
 	SortOrder      string // 排序
 	Status         string // 状态：0-禁用 1-启用
-	CreatedAt      string //
-	UpdatedAt      string //
+	CreatedAt      string // 创建时间
+	UpdatedAt      string // 更新时间
 }
 
 // levelRulesColumns holds the columns for table usr_level_rules.

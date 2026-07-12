@@ -21,6 +21,6 @@ type PointsRules struct {
 	Description  interface{} // 规则说明
 	SortOrder    interface{} // 排序
 	Status       interface{} // 状态：0-禁用 1-启用
-	CreatedAt    *gtime.Time //
-	UpdatedAt    *gtime.Time //
+	CreatedAt    *gtime.Time // 创建时间
+	UpdatedAt    *gtime.Time // 更新时间
 }

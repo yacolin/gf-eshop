@@ -29,8 +29,8 @@ type Products struct {
 	SeoTitle       string      `json:"seo_title"       description:"SEO标题（自定义title，留空则使用name）"`
 	SeoKeywords    string      `json:"seo_keywords"    description:"SEO关键词（逗号分隔）"`
 	SeoDescription string      `json:"seo_description" description:"SEO描述（页面meta description）"`
-	CreatedBy      string      `json:"created_by"      description:"创建人（运营工号）"`
-	UpdatedBy      string      `json:"updated_by"      description:"最后更新人"`
+	CreatedBy      int64       `json:"created_by"      description:"创建人ID"`
+	UpdatedBy      int64       `json:"updated_by"      description:"最后更新人ID"`
 	CreatedAt      *gtime.Time `json:"created_at"      description:"创建时间"`
 	UpdatedAt      *gtime.Time `json:"updated_at"      description:"更新时间"`
 	DeletedAt      *gtime.Time `json:"deleted_at"      description:"软删除时间（NULL表示未删除）"`
