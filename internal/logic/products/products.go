@@ -837,6 +837,216 @@ func (s *sProducts) Update(ctx context.Context, req *v1.ProductsUpdateReq) (res 
 	return &v1.ProductsUpdateRes{}, nil
 }
 
+func (s *sProducts) UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullReq) (res *v1.ProductsUpdateFullRes, err error) {
+	var oldProduct *entity.Products
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id, req.Id).Scan(&oldProduct)
+	if err != nil {
+		return nil, err
+	}
+	if oldProduct == nil {
+		return nil, errcode.ErrProductNotFound
+	}
+
+	// ── Rule 1: 禁止修改类目 ──────────────────────────────────────────
+	if oldProduct.CategoryId != req.CategoryId {
+		return nil, gerror.NewCode(errcode.Code(400), "商品类目不可修改")
+	}
+
+	// ── 加载旧 SKU ────────────────────────────────────────────────────
+	var oldSkus []*entity.Skus
+	err = dao.Skus.Ctx(ctx).Where(dao.Skus.Columns().ProductId, req.Id).Scan(&oldSkus)
+	if err != nil {
+		return nil, err
+	}
+	oldSKUMap := make(map[int64]*entity.Skus, len(oldSkus))
+	for _, sku := range oldSkus {
+		oldSKUMap[sku.Id] = sku
+	}
+
+	// ── 加载旧 sku_specs 规格组 ──────────────────────────────────────
+	oldSpecAttrIDs := make(map[int64]string)
+	if len(oldSkus) > 0 {
+		oldSkuIDs := make([]int64, len(oldSkus))
+		for i, sku := range oldSkus {
+			oldSkuIDs[i] = sku.Id
+		}
+		type specRow struct {
+			AttributeId   int64  `orm:"attribute_id"`
+			AttributeName string `orm:"attribute_name"`
+		}
+		var specRows []specRow
+		err = g.DB().Model("sp_sku_specs ss").
+			Fields("DISTINCT ss.attribute_id", "a.name AS attribute_name").
+			LeftJoin("sp_attributes a", "a.id = ss.attribute_id").
+			Where("ss.sku_id IN (?)", oldSkuIDs).
+			Scan(&specRows)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range specRows {
+			oldSpecAttrIDs[r.AttributeId] = r.AttributeName
+		}
+	}
+
+	// ── Rule 2: 禁止删除旧规格组 ─────────────────────────────────────
+	if len(oldSpecAttrIDs) > 0 {
+		for _, sku := range req.SKUs {
+			if sku.Id > 0 {
+				if old, ok := oldSKUMap[sku.Id]; ok && old.SpecSummary != sku.SpecSummary {
+					return nil, gerror.NewCode(errcode.Code(400),
+						fmt.Sprintf("不允许修改已有 SKU(%d) 的规格文本", sku.Id))
+				}
+				continue
+			}
+			// 新 SKU 的规格维度数必须与旧规格匹配
+			oldDim := 1
+			if len(oldSkus) > 0 {
+				oldDim = len(strings.Split(oldSkus[0].SpecSummary, " / "))
+			}
+			newDim := len(strings.Split(sku.SpecSummary, " / "))
+			if newDim != oldDim {
+				return nil, gerror.NewCode(errcode.Code(400),
+					fmt.Sprintf("新 SKU 规格维度(%d)与旧规格维度(%d)不匹配: %s", newDim, oldDim, sku.SpecSummary))
+			}
+		}
+	}
+
+	// ── Rule 3: 禁止移除旧的 SKU 组合 ─────────────────────────────────
+	dtoSkuIDSet := make(map[int64]struct{}, len(req.SKUs))
+	for _, sku := range req.SKUs {
+		if sku.Id > 0 {
+			if _, exists := oldSKUMap[sku.Id]; !exists {
+				return nil, gerror.NewCode(gcode.CodeInvalidParameter,
+					fmt.Sprintf("SKU ID %d 不属于该商品", sku.Id))
+			}
+			dtoSkuIDSet[sku.Id] = struct{}{}
+		}
+	}
+	for _, oldSku := range oldSkus {
+		if _, exists := dtoSkuIDSet[oldSku.Id]; !exists {
+			return nil, gerror.NewCode(errcode.Code(400),
+				fmt.Sprintf("不允许移除旧的规格组合: %s", oldSku.SpecSummary))
+		}
+	}
+
+	// ── 事务 ──────────────────────────────────────────────────────────
+	err = dao.Products.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		_, err = tx.Model("sp_products").Where("id", req.Id).Update(do.Products{
+			Name:      req.Name,
+			Subtitle:  req.Subtitle,
+			BrandId:   req.BrandId,
+			Unit:      req.Unit,
+			MainImage: req.MainImage,
+			Images:    req.Images,
+			VideoUrl:  req.VideoUrl,
+			SortOrder: req.SortOrder,
+			UpdatedBy: req.UpdatedBy,
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, sku := range req.SKUs {
+			barcode := interface{}(sku.Barcode)
+			if sku.Barcode == "" {
+				barcode = nil
+			}
+			skuData := do.Skus{
+				SkuCode:        sku.SkuCode,
+				Barcode:        barcode,
+				SpecSummary:    sku.SpecSummary,
+				Price:          sku.Price,
+				MarketPrice:    sku.MarketPrice,
+				CostPrice:      sku.CostPrice,
+				Weight:         sku.Weight,
+				Volume:         sku.Volume,
+				Length:         sku.Length,
+				Width:          sku.Width,
+				Height:         sku.Height,
+				MinPurchaseQty: sku.MinPurchaseQty,
+				MaxPurchaseQty: sku.MaxPurchaseQty,
+				Image:          sku.Image,
+			}
+			if sku.Id > 0 {
+				_, err = tx.Model("sp_skus").Where("id", sku.Id).Update(skuData)
+			} else {
+				skuData.ProductId = req.Id
+				_, err = tx.Model("sp_skus").Insert(skuData)
+			}
+			if err != nil {
+				return err
+			}
+		}
+
+		if req.Description != "" || req.MobileDesc != "" {
+			count, err := tx.Model("sp_product_descriptions").Where("product_id", req.Id).Count()
+			if err != nil {
+				return err
+			}
+			if count > 0 {
+				_, err = tx.Model("sp_product_descriptions").Where("product_id", req.Id).Update(do.ProductDescriptions{
+					Description:       req.Description,
+					MobileDescription: req.MobileDesc,
+				})
+			} else {
+				_, err = tx.Model("sp_product_descriptions").Insert(do.ProductDescriptions{
+					ProductId:         req.Id,
+					Description:       req.Description,
+					MobileDescription: req.MobileDesc,
+				})
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err = tx.Model("sp_product_descriptions").Where("product_id", req.Id).Delete()
+			if err != nil {
+				return err
+			}
+		}
+
+		if len(req.Attributes) > 0 {
+			_, err = tx.Model("sp_product_attributes").Where("product_id", req.Id).Unscoped().Delete()
+			if err != nil {
+				return err
+			}
+			for _, attr := range req.Attributes {
+				data := do.ProductAttributes{
+					ProductId:   req.Id,
+					AttributeId: attr.AttributeId,
+					Value:       attr.Value,
+				}
+				if attr.AttributeValueId > 0 {
+					data.AttributeValueId = attr.AttributeValueId
+				}
+				_, err = tx.Model("sp_product_attributes").Insert(data)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		hasDesc := 0
+		if req.Description != "" || req.MobileDesc != "" {
+			hasDesc = 1
+		}
+		_, err = tx.Model("sp_products").Where("id", req.Id).Update(g.Map{
+			"has_description": hasDesc,
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	delProductEntityCache(context.Background(), req.Id)
+	delAllProductListCaches(context.Background())
+	return &v1.ProductsUpdateFullRes{}, nil
+}
+
 func (s *sProducts) Delete(ctx context.Context, req *v1.ProductsDeleteReq) (res *v1.ProductsDeleteRes, err error) {
 	_, err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id, req.Id).Delete()
 	if err != nil {

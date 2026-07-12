@@ -48,6 +48,10 @@ func (c *ControllerV1) Update(ctx context.Context, req *v1.ProductsUpdateReq) (r
 	return service.Products().Update(ctx, req)
 }
 
+func (c *ControllerV1) UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullReq) (res *v1.ProductsUpdateFullRes, err error) {
+	return service.Products().UpdateFull(ctx, req)
+}
+
 func (c *ControllerV1) Delete(ctx context.Context, req *v1.ProductsDeleteReq) (res *v1.ProductsDeleteRes, err error) {
 	return service.Products().Delete(ctx, req)
 }
