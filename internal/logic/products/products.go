@@ -298,6 +298,10 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 
 	// 从 sku_specs EAV 表聚合规格维度
 	specAttrs := aggregateSpecAttrs(ctx, skuEntities)
+	// 兜底：如果 sp_sku_specs 没有数据，从 sp_product_attributes 查 is_sku_spec=1 的规格
+	if len(specAttrs) == 0 {
+		specAttrs = fallbackSpecAttrs(ctx, req.Id)
+	}
 
 	// 聚合商品级价格&库存
 	var priceMin, priceMax, totalStock int64
@@ -411,16 +415,8 @@ func (s *sProducts) Create(ctx context.Context, req *v1.ProductsCreateReq) (res 
 		id, _ := result.LastInsertId()
 		productId = id
 
-		// 写入非销售属性（is_sku_spec = 0）
-		for _, attr := range req.Attributes {
-			data := do.ProductAttributes{
-				ProductId:   productId,
-				AttributeId: attr.AttributeId,
-				Value:       attr.Value,
-			}
-			if attr.AttributeValueId > 0 {
-				data.AttributeValueId = attr.AttributeValueId
-			}
+		attrRows := buildAttrRows(ctx, tx, productId, req.Attributes)
+		for _, data := range attrRows {
 			_, err = tx.Model("sp_product_attributes").Insert(data)
 			if err != nil {
 				return err
@@ -499,15 +495,8 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 			}
 		}
 
-		for _, attr := range req.Attributes {
-			data := do.ProductAttributes{
-				ProductId:   productId,
-				AttributeId: attr.AttributeId,
-				Value:       attr.Value,
-			}
-			if attr.AttributeValueId > 0 {
-				data.AttributeValueId = attr.AttributeValueId
-			}
+		attrRows := buildAttrRows(ctx, tx, productId, req.Attributes)
+		for _, data := range attrRows {
 			_, err = tx.Model("sp_product_attributes").Insert(data)
 			if err != nil {
 				return err
@@ -580,15 +569,8 @@ func (s *sProducts) UpdateAttributes(ctx context.Context, req *v1.ProductsUpdate
 		if err != nil {
 			return err
 		}
-		for _, attr := range req.Attributes {
-			data := do.ProductAttributes{
-				ProductId:   req.Id,
-				AttributeId: attr.AttributeId,
-				Value:       attr.Value,
-			}
-			if attr.AttributeValueId > 0 {
-				data.AttributeValueId = attr.AttributeValueId
-			}
+		attrRows := buildAttrRows(ctx, tx, req.Id, req.Attributes)
+		for _, data := range attrRows {
 			_, err = tx.Model("sp_product_attributes").Insert(data)
 			if err != nil {
 				return err
@@ -1028,15 +1010,8 @@ func (s *sProducts) UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullRe
 			if err != nil {
 				return err
 			}
-			for _, attr := range req.Attributes {
-				data := do.ProductAttributes{
-					ProductId:   req.Id,
-					AttributeId: attr.AttributeId,
-					Value:       attr.Value,
-				}
-				if attr.AttributeValueId > 0 {
-					data.AttributeValueId = attr.AttributeValueId
-				}
+			attrRows := buildAttrRows(ctx, tx, req.Id, req.Attributes)
+			for _, data := range attrRows {
 				_, err = tx.Model("sp_product_attributes").Insert(data)
 				if err != nil {
 					return err
@@ -1107,14 +1082,15 @@ func buildProductListIDs(ctx context.Context, categoryId, brandId int64, status 
 // findProductAttrsWithName 查询商品属性并 left join 属性表获取名称
 func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.ProductAttrDetailResponse, error) {
 	type attrRow struct {
-		AttributeId   int64  `orm:"attribute_id"`
-		AttributeName string `orm:"attribute_name"`
-		Value         string `orm:"value"`
-		SortOrder     int    `orm:"sort_order"`
+		AttributeId      int64  `orm:"attribute_id"`
+		AttributeName    string `orm:"attribute_name"`
+		AttributeValueId int64  `orm:"attribute_value_id"`
+		Value            string `orm:"value"`
+		SortOrder        int    `orm:"sort_order"`
 	}
 	var rows []attrRow
 	err := g.DB().Model("sp_product_attributes pa").
-		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.value", "pa.sort_order").
+		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id", "pa.value", "pa.sort_order").
 		LeftJoin("sp_attributes a", "a.id = pa.attribute_id").
 		Where("pa.product_id", productId).
 		Where("pa.deleted_at IS NULL").
@@ -1124,18 +1100,21 @@ func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.Produc
 		return nil, err
 	}
 
-	// 按 attribute_id 分组聚合 values，保留原始顺序
-	seen := make(map[int64]int) // attribute_id → result index
+	seen := make(map[int64]int)
 	result := make([]v1.ProductAttrDetailResponse, 0)
 	for _, r := range rows {
+		var ids []int64
+		if r.AttributeValueId > 0 {
+			ids = []int64{r.AttributeValueId}
+		}
 		if idx, ok := seen[r.AttributeId]; ok {
-			result[idx].Values = append(result[idx].Values, r.Value)
+			result[idx].Values = append(result[idx].Values, ids...)
 		} else {
 			seen[r.AttributeId] = len(result)
 			result = append(result, v1.ProductAttrDetailResponse{
 				AttributeId:   r.AttributeId,
 				AttributeName: r.AttributeName,
-				Values:        []string{r.Value},
+				Values:        ids,
 				SortOrder:     r.SortOrder,
 			})
 		}
@@ -1144,6 +1123,63 @@ func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.Produc
 		result = make([]v1.ProductAttrDetailResponse, 0)
 	}
 	return result, nil
+}
+
+// buildAttrRows 将扁平属性列表展开为单行记录，每行一个 (product_id, attribute_id, attribute_value_id)
+// 适配 uk_product_attribute(product_id, attribute_id, attribute_value_id) 唯一索引
+func buildAttrRows(ctx context.Context, tx gdb.TX, productId int64, list []v1.CreateProductAttrItem) []do.ProductAttributes {
+	var rows []do.ProductAttributes
+
+	allValueIDs := make([]int64, 0)
+	for _, attr := range list {
+		for _, vid := range attr.AttributeValueId {
+			if vid > 0 {
+				allValueIDs = append(allValueIDs, vid)
+			}
+		}
+	}
+
+	valMap := make(map[int64]string)
+	if len(allValueIDs) > 0 {
+		type valRow struct {
+			Id    int64  `orm:"id"`
+			Value string `orm:"value"`
+		}
+		var vals []valRow
+		err := tx.Model("sp_attribute_values").Where("id IN (?)", allValueIDs).Scan(&vals)
+		if err == nil {
+			for _, v := range vals {
+				valMap[v.Id] = v.Value
+			}
+		}
+	}
+
+	for _, attr := range list {
+		if len(attr.AttributeValueId) > 0 {
+			for _, vid := range attr.AttributeValueId {
+				if vid <= 0 {
+					continue
+				}
+				v := valMap[vid]
+				if v == "" {
+					v = attr.Value
+				}
+				rows = append(rows, do.ProductAttributes{
+					ProductId:        productId,
+					AttributeId:      attr.AttributeId,
+					AttributeValueId: vid,
+					Value:            v,
+				})
+			}
+		} else if attr.Value != "" {
+			rows = append(rows, do.ProductAttributes{
+				ProductId:   productId,
+				AttributeId: attr.AttributeId,
+				Value:       attr.Value,
+			})
+		}
+	}
+	return rows
 }
 
 // ── Helper: SKU Spec Aggregation ────────────────────────────────────────
@@ -1160,24 +1196,23 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 	}
 
 	type specRow struct {
-		AttributeName  string `orm:"attribute_name"`
-		AttributeValue string `orm:"attribute_value"`
+		AttributeName    string `orm:"attribute_name"`
+		AttributeValueID int64  `orm:"attribute_value_id"`
 	}
 	var rows []specRow
 	err := g.DB().Model("sp_sku_specs ss").
-		Fields("a.name AS attribute_name", "av.value AS attribute_value").
+		Fields("a.name AS attribute_name", "ss.attribute_value_id").
 		LeftJoin("sp_attributes a", "a.id = ss.attribute_id").
-		LeftJoin("sp_attribute_values av", "av.id = ss.attribute_value_id").
 		Where("ss.sku_id IN (?)", skuIDs).
-		Order("ss.sort_order ASC, av.sort_order ASC").
+		Order("ss.sort_order ASC").
 		Scan(&rows)
 	if err != nil || len(rows) == 0 {
 		return make([]v1.ProductAttrDetailResponse, 0)
 	}
 
 	type attrValues struct {
-		set   map[string]struct{}
-		order []string
+		set   map[int64]struct{}
+		order []int64
 	}
 	attrs := make(map[string]*attrValues)
 	keyOrder := make([]string, 0)
@@ -1185,13 +1220,13 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 	for _, r := range rows {
 		av, ok := attrs[r.AttributeName]
 		if !ok {
-			av = &attrValues{set: make(map[string]struct{})}
+			av = &attrValues{set: make(map[int64]struct{})}
 			attrs[r.AttributeName] = av
 			keyOrder = append(keyOrder, r.AttributeName)
 		}
-		if _, seen := av.set[r.AttributeValue]; !seen {
-			av.set[r.AttributeValue] = struct{}{}
-			av.order = append(av.order, r.AttributeValue)
+		if _, seen := av.set[r.AttributeValueID]; !seen {
+			av.set[r.AttributeValueID] = struct{}{}
+			av.order = append(av.order, r.AttributeValueID)
 		}
 	}
 
@@ -1206,6 +1241,49 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 }
 
 
+
+
+// fallbackSpecAttrs 当 sp_sku_specs 无数据时，从 sp_product_attributes 兜底
+// 筛选 is_sku_spec=1 的销售属性呈现给 Selectable 规格项
+func fallbackSpecAttrs(ctx context.Context, productId int64) []v1.ProductAttrDetailResponse {
+	type attrRow struct {
+		AttributeId      int64  `orm:"attribute_id"`
+		AttributeName    string `orm:"attribute_name"`
+		AttributeValueId int64  `orm:"attribute_value_id"`
+	}
+	var rows []attrRow
+	err := g.DB().Model("sp_product_attributes pa").
+		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id").
+		LeftJoin("sp_attributes a", "a.id = pa.attribute_id").
+		Where("pa.product_id", productId).
+		Where("a.is_sku_spec", 1).
+		Where("pa.deleted_at IS NULL").
+		Order("a.sort_order ASC, pa.id ASC").
+		Scan(&rows)
+	if err != nil || len(rows) == 0 {
+		return make([]v1.ProductAttrDetailResponse, 0)
+	}
+
+	seen := make(map[int64]int)
+	result := make([]v1.ProductAttrDetailResponse, 0)
+	for _, r := range rows {
+		var ids []int64
+		if r.AttributeValueId > 0 {
+			ids = []int64{r.AttributeValueId}
+		}
+		if idx, ok := seen[r.AttributeId]; ok {
+			result[idx].Values = append(result[idx].Values, ids...)
+		} else {
+			seen[r.AttributeId] = len(result)
+			result = append(result, v1.ProductAttrDetailResponse{
+				AttributeId:   r.AttributeId,
+				AttributeName: r.AttributeName,
+				Values:        ids,
+			})
+		}
+	}
+	return result
+}
 
 
 type productStats struct {

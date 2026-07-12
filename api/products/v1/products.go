@@ -28,9 +28,9 @@ type CreateSKUItem struct {
 }
 
 type CreateProductAttrItem struct {
-	AttributeId      int64  `json:"attribute_id"       description:"属性ID"`
-	AttributeValueId int64  `json:"attribute_value_id"  description:"引用属性值字典ID（可选），优先使用"`
-	Value            string `json:"value"              description:"属性值"`
+	AttributeId      int64   `json:"attribute_id"       description:"属性ID"`
+	AttributeValueId []int64 `json:"attribute_value_id"  description:"引用属性值字典ID列表（可选），后端自动查值"`
+	Value            string  `json:"value"              description:"属性值（可选，为空时后端从 attribute_value_id 自动查询）"`
 }
 
 // ──────────────────────────────────────────────
@@ -146,10 +146,10 @@ type ProductsDetailReq struct {
 	Id     int64 `json:"id"`
 }
 type ProductAttrDetailResponse struct {
-	AttributeId   int64    `json:"attribute_id"`
-	AttributeName string   `json:"attribute_name"`
-	Values        []string `json:"values"`
-	SortOrder     int      `json:"sort_order"`
+	AttributeId   int64   `json:"attribute_id"`
+	AttributeName string  `json:"attribute_name"`
+	Values        []int64 `json:"values"`
+	SortOrder     int     `json:"sort_order"`
 }
 
 type SkuDetailItem struct {
