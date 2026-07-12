@@ -245,22 +245,22 @@ func cacheKeyProductListIDs(categoryId, brandId int64, status int) string {
 	return fmt.Sprintf("product:list:ids:cat=%d:brand=%d:status=%d", categoryId, brandId, status)
 }
 
-// productListFetchScript ZRANK + ZRANGE 一次 EVAL 往返
+// productListFetchScript ZREVRANK + ZREVRANGE 一次 EVAL 往返（倒序）
 // 返回: [count, status, id1, id2, ...]
-//   count>0: status=0, 后面跟 ID 列表
+//   count>0: status=0, 后面跟 ID 列表（从高到低）
 //   count=0: status=-1 → 游标不在缓存; status=0 → 无更多数据
 const productListFetchScript = `
 local cursor_id = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local start = 0
 if cursor_id > 0 then
-    local rank = redis.call("ZRANK", KEYS[1], string.format("%020d", cursor_id))
+    local rank = redis.call("ZREVRANK", KEYS[1], string.format("%020d", cursor_id))
     if not rank then
         return {0, -1}
     end
     start = rank + 1
 end
-local members = redis.call("ZRANGE", KEYS[1], start, start + limit - 1)
+local members = redis.call("ZREVRANGE", KEYS[1], start, start + limit - 1)
 local n = #members
 if n == 0 then
     return {0, 0}

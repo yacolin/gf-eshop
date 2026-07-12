@@ -100,7 +100,7 @@ func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, c
 
 	// 按 ID 取完整实体
 	var products []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&products)
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderDesc(dao.Products.Columns().Id).Scan(&products)
 	if err != nil {
 		return nil, err
 	}
@@ -152,10 +152,10 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 		m = m.Where(dao.Products.Columns().Id+" IN (SELECT DISTINCT product_id FROM sp_skus WHERE price <= ? AND deleted_at IS NULL)", req.PriceMax)
 	}
 	if cursorId > 0 {
-		m = m.WhereGT(dao.Products.Columns().Id, cursorId)
+		m = m.WhereLT(dao.Products.Columns().Id, cursorId)
 	}
 
-	values, err := m.Fields(dao.Products.Columns().Id).OrderAsc(dao.Products.Columns().Id).Limit(size + 1).Array()
+	values, err := m.Fields(dao.Products.Columns().Id).OrderDesc(dao.Products.Columns().Id).Limit(size + 1).Array()
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 	}
 
 	var products []*entity.Products
-	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderAsc(dao.Products.Columns().Id).Scan(&products)
+	err = dao.Products.Ctx(ctx).Where(dao.Products.Columns().Id+" IN (?)", ids).OrderDesc(dao.Products.Columns().Id).Scan(&products)
 	if err != nil {
 		return nil, err
 	}
@@ -951,27 +951,45 @@ func (s *sProducts) UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullRe
 			if sku.Barcode == "" {
 				barcode = nil
 			}
-			skuData := do.Skus{
-				SkuCode:        sku.SkuCode,
-				Barcode:        barcode,
-				SpecSummary:    sku.SpecSummary,
-				Price:          sku.Price,
-				MarketPrice:    sku.MarketPrice,
-				CostPrice:      sku.CostPrice,
-				Weight:         sku.Weight,
-				Volume:         sku.Volume,
-				Length:         sku.Length,
-				Width:          sku.Width,
-				Height:         sku.Height,
-				MinPurchaseQty: sku.MinPurchaseQty,
-				MaxPurchaseQty: sku.MaxPurchaseQty,
-				Image:          sku.Image,
-			}
 			if sku.Id > 0 {
-				_, err = tx.Model("sp_skus").Where("id", sku.Id).Update(skuData)
+				old := oldSKUMap[sku.Id]
+				skuCode := sku.SkuCode
+				if skuCode == "" {
+					skuCode = old.SkuCode
+				}
+				_, err = tx.Model("sp_skus").Where("id", sku.Id).Update(do.Skus{
+					SkuCode:        skuCode,
+					Barcode:        barcode,
+					Price:          sku.Price,
+					MarketPrice:    sku.MarketPrice,
+					CostPrice:      sku.CostPrice,
+					Weight:         sku.Weight,
+					Volume:         sku.Volume,
+					Length:         sku.Length,
+					Width:          sku.Width,
+					Height:         sku.Height,
+					MinPurchaseQty: sku.MinPurchaseQty,
+					MaxPurchaseQty: sku.MaxPurchaseQty,
+					Image:          sku.Image,
+				})
 			} else {
-				skuData.ProductId = req.Id
-				_, err = tx.Model("sp_skus").Insert(skuData)
+				_, err = tx.Model("sp_skus").Insert(do.Skus{
+					ProductId:      req.Id,
+					SkuCode:        sku.SkuCode,
+					Barcode:        barcode,
+					SpecSummary:    sku.SpecSummary,
+					Price:          sku.Price,
+					MarketPrice:    sku.MarketPrice,
+					CostPrice:      sku.CostPrice,
+					Weight:         sku.Weight,
+					Volume:         sku.Volume,
+					Length:         sku.Length,
+					Width:          sku.Width,
+					Height:         sku.Height,
+					MinPurchaseQty: sku.MinPurchaseQty,
+					MaxPurchaseQty: sku.MaxPurchaseQty,
+					Image:          sku.Image,
+				})
 			}
 			if err != nil {
 				return err
@@ -1073,7 +1091,7 @@ func buildProductListIDs(ctx context.Context, categoryId, brandId int64, status 
 		m = m.Where(dao.Products.Columns().Status, status)
 	}
 
-	values, err := m.OrderAsc(dao.Products.Columns().Id).Array()
+	values, err := m.OrderDesc(dao.Products.Columns().Id).Array()
 	if err != nil {
 		return nil, err
 	}
