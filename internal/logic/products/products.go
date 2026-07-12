@@ -462,10 +462,14 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 		productId = id
 
 		for _, sku := range req.SKUs {
+			barcode := interface{}(sku.Barcode)
+			if sku.Barcode == "" {
+				barcode = nil
+			}
 			_, err = tx.Model("sp_skus").Insert(do.Skus{
 				ProductId:      productId,
 				SkuCode:        sku.SkuCode,
-				Barcode:        sku.Barcode,
+				Barcode:        barcode,
 				SpecSummary:    sku.SpecSummary,
 				Price:          sku.Price,
 				MarketPrice:    sku.MarketPrice,

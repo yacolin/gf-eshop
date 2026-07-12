@@ -19,3 +19,5 @@ bin
 **/config/config.yaml
 __pycache__/
 *.pyc
+
+docs/inventory-api-requirements.md
