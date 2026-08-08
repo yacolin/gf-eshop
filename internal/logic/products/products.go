@@ -318,12 +318,16 @@ func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (res 
 	}
 
 	// 查询类目下所有属性，用于补充 attribute_id / sort_order
+	// 经类目-属性关联表查询：属性可能被多类目共享（category_id 仅标记归属类目）
 	attrNameMap := make(map[string]int64)
 	attrOrder := make(map[string]int)
 	if product.CategoryId > 0 {
 		var catAttrs []*entity.Attributes
 		err := dao.Attributes.Ctx(ctx).
-			Where(dao.Attributes.Columns().CategoryId, product.CategoryId).
+			Fields("sp_attributes.*").
+			InnerJoin("sp_category_attributes ca", "ca.attribute_id = sp_attributes.id").
+			Where("ca.category_id", product.CategoryId).
+			OrderAsc("ca.sort_order").
 			Scan(&catAttrs)
 		if err == nil {
 			for i, a := range catAttrs {
