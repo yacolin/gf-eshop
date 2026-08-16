@@ -145,11 +145,16 @@ type ProductsDetailReq struct {
 	g.Meta `path:"/products/{id}" tags:"Products" method:"get" summary:"商品详情"`
 	Id     int64 `json:"id"`
 }
+type ProductAttrValueResponse struct {
+	Id    int64  `json:"id"`
+	Value string `json:"value"`
+}
+
 type ProductAttrDetailResponse struct {
-	AttributeId   int64   `json:"attribute_id"`
-	AttributeName string  `json:"attribute_name"`
-	Values        []int64 `json:"values"`
-	SortOrder     int     `json:"sort_order"`
+	AttributeId   int64                      `json:"attribute_id"`
+	AttributeName string                     `json:"attribute_name"`
+	Values        []*ProductAttrValueResponse `json:"values"`
+	SortOrder     int                        `json:"sort_order"`
 }
 
 type SkuDetailItem struct {

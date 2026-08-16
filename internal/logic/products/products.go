@@ -1089,13 +1089,14 @@ func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.Produc
 		AttributeId      int64  `orm:"attribute_id"`
 		AttributeName    string `orm:"attribute_name"`
 		AttributeValueId int64  `orm:"attribute_value_id"`
-		Value            string `orm:"value"`
+		AttributeValue   string `orm:"attribute_value"`
 		SortOrder        int    `orm:"sort_order"`
 	}
 	var rows []attrRow
 	err := g.DB().Model("sp_product_attributes pa").
-		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id", "pa.value", "pa.sort_order").
+		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id", "COALESCE(av.value, pa.value) AS attribute_value", "pa.sort_order").
 		LeftJoin("sp_attributes a", "a.id = pa.attribute_id").
+		LeftJoin("sp_attribute_values av", "av.id = pa.attribute_value_id").
 		Where("pa.product_id", productId).
 		Where("pa.deleted_at IS NULL").
 		Order("pa.sort_order ASC, pa.id ASC").
@@ -1107,18 +1108,18 @@ func findProductAttrsWithName(ctx context.Context, productId int64) ([]v1.Produc
 	seen := make(map[int64]int)
 	result := make([]v1.ProductAttrDetailResponse, 0)
 	for _, r := range rows {
-		var ids []int64
-		if r.AttributeValueId > 0 {
-			ids = []int64{r.AttributeValueId}
+		var vals []*v1.ProductAttrValueResponse
+		if r.AttributeValueId > 0 || r.AttributeValue != "" {
+			vals = []*v1.ProductAttrValueResponse{{Id: r.AttributeValueId, Value: r.AttributeValue}}
 		}
 		if idx, ok := seen[r.AttributeId]; ok {
-			result[idx].Values = append(result[idx].Values, ids...)
+			result[idx].Values = append(result[idx].Values, vals...)
 		} else {
 			seen[r.AttributeId] = len(result)
 			result = append(result, v1.ProductAttrDetailResponse{
 				AttributeId:   r.AttributeId,
 				AttributeName: r.AttributeName,
-				Values:        ids,
+				Values:        vals,
 				SortOrder:     r.SortOrder,
 			})
 		}
@@ -1202,11 +1203,13 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 	type specRow struct {
 		AttributeName    string `orm:"attribute_name"`
 		AttributeValueID int64  `orm:"attribute_value_id"`
+		AttributeValue   string `orm:"attribute_value"`
 	}
 	var rows []specRow
 	err := g.DB().Model("sp_sku_specs ss").
-		Fields("a.name AS attribute_name", "ss.attribute_value_id").
+		Fields("a.name AS attribute_name", "ss.attribute_value_id", "av.value AS attribute_value").
 		LeftJoin("sp_attributes a", "a.id = ss.attribute_id").
+		LeftJoin("sp_attribute_values av", "av.id = ss.attribute_value_id").
 		Where("ss.sku_id IN (?)", skuIDs).
 		Order("ss.sort_order ASC").
 		Scan(&rows)
@@ -1216,7 +1219,7 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 
 	type attrValues struct {
 		set   map[int64]struct{}
-		order []int64
+		order []*v1.ProductAttrValueResponse
 	}
 	attrs := make(map[string]*attrValues)
 	keyOrder := make([]string, 0)
@@ -1230,7 +1233,10 @@ func aggregateSpecAttrs(ctx context.Context, skus []*entity.Skus) []v1.ProductAt
 		}
 		if _, seen := av.set[r.AttributeValueID]; !seen {
 			av.set[r.AttributeValueID] = struct{}{}
-			av.order = append(av.order, r.AttributeValueID)
+			av.order = append(av.order, &v1.ProductAttrValueResponse{
+				Id:    r.AttributeValueID,
+				Value: r.AttributeValue,
+			})
 		}
 	}
 
@@ -1254,11 +1260,13 @@ func fallbackSpecAttrs(ctx context.Context, productId int64) []v1.ProductAttrDet
 		AttributeId      int64  `orm:"attribute_id"`
 		AttributeName    string `orm:"attribute_name"`
 		AttributeValueId int64  `orm:"attribute_value_id"`
+		AttributeValue   string `orm:"attribute_value"`
 	}
 	var rows []attrRow
 	err := g.DB().Model("sp_product_attributes pa").
-		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id").
+		Fields("pa.attribute_id", "a.name AS attribute_name", "pa.attribute_value_id", "COALESCE(av.value, pa.value) AS attribute_value").
 		LeftJoin("sp_attributes a", "a.id = pa.attribute_id").
+		LeftJoin("sp_attribute_values av", "av.id = pa.attribute_value_id").
 		Where("pa.product_id", productId).
 		Where("a.is_sku_spec", 1).
 		Where("pa.deleted_at IS NULL").
@@ -1271,18 +1279,18 @@ func fallbackSpecAttrs(ctx context.Context, productId int64) []v1.ProductAttrDet
 	seen := make(map[int64]int)
 	result := make([]v1.ProductAttrDetailResponse, 0)
 	for _, r := range rows {
-		var ids []int64
-		if r.AttributeValueId > 0 {
-			ids = []int64{r.AttributeValueId}
+		var vals []*v1.ProductAttrValueResponse
+		if r.AttributeValueId > 0 || r.AttributeValue != "" {
+			vals = []*v1.ProductAttrValueResponse{{Id: r.AttributeValueId, Value: r.AttributeValue}}
 		}
 		if idx, ok := seen[r.AttributeId]; ok {
-			result[idx].Values = append(result[idx].Values, ids...)
+			result[idx].Values = append(result[idx].Values, vals...)
 		} else {
 			seen[r.AttributeId] = len(result)
 			result = append(result, v1.ProductAttrDetailResponse{
 				AttributeId:   r.AttributeId,
 				AttributeName: r.AttributeName,
-				Values:        ids,
+				Values:        vals,
 			})
 		}
 	}
