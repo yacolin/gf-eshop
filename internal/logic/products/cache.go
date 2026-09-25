@@ -11,6 +11,7 @@ import (
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/bytedance/sonic"
 	"github.com/gogf/gf/v2/frame/g"
+	"golang.org/x/sync/singleflight"
 
 	"gf-eshop/internal/dao"
 	"gf-eshop/internal/model/entity"
@@ -240,9 +241,28 @@ func jitteredTTL(base time.Duration, jitter float64) time.Duration {
 
 const productListCacheTTL = 600 // 10 minutes
 
+// productListZSETSf 保证同一筛选组合只有一个 goroutine 重建 ZSET
+var productListZSETSf singleflight.Group
+
 // cacheKeyProductListIDs 构造 ZSET 缓存键
 func cacheKeyProductListIDs(categoryId, brandId int64, status int) string {
 	return fmt.Sprintf("product:list:ids:cat=%d:brand=%d:status=%d", categoryId, brandId, status)
+}
+
+// ensureProductListZSET 确保列表 ZSET 存在：缺失时经 singleflight 调用 build 重建并写入。
+func ensureProductListZSET(ctx context.Context, key string, build func() ([]int64, error)) error {
+	_, err, _ := productListZSETSf.Do(key, func() (interface{}, error) {
+		exists, err := g.Redis().Do(ctx, "EXISTS", key)
+		if err != nil || exists.Int() == 0 {
+			ids, err := build()
+			if err != nil {
+				return nil, err
+			}
+			_ = setProductListZSET(ctx, key, ids)
+		}
+		return nil, nil
+	})
+	return err
 }
 
 // productListFetchScript ZREVRANK + ZREVRANGE 一次 EVAL 往返（倒序）
