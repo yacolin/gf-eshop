@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"sort"
 	"strconv"
+	"strings"
 
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gcmd"
@@ -82,6 +85,9 @@ var (
 				pipeline := productsLogic.NewWarmupPipeline(
 					productsLogic.NewFuncStage("brands", func(ctx context.Context) (int, error) {
 						return brandsLogic.Warmup(ctx)
+					}),
+					productsLogic.NewFuncStage("brands_es", func(ctx context.Context) (int, error) {
+						return brandsLogic.WarmupES(ctx)
 					}),
 					productsLogic.NewFuncStage("categories", func(ctx context.Context) (int, error) {
 						return categoriesLogic.Warmup(ctx)
@@ -224,6 +230,62 @@ var (
 		},
 	}
 )
+
+// reindexTargets 已接入 ES 的业务实体 → 全量重建函数。
+// 后续 products / skus 接入时在此登记，即可自动获得 `main reindex <entity>` 能力。
+var reindexTargets = map[string]func(context.Context) (int, error){
+	"brands": brandsLogic.ReindexBrands,
+}
+
+// reindexEntityNames 返回稳定排序的实体名，保证命令输出可预期。
+func reindexEntityNames() []string {
+	names := make([]string, 0, len(reindexTargets))
+	for name := range reindexTargets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func init() {
+	if err := Main.AddCommand(&gcmd.Command{
+		Name:  "reindex",
+		Usage: "reindex [--entity=brands]",
+		Brief: "全量重建 Elasticsearch 索引（省略 --entity 时重建全部已接入实体）",
+		Func: func(ctx context.Context, parser *gcmd.Parser) error {
+			// 注意：GoFrame 的 gcmd 会把多余的位置参数当成多级命令名，
+			// 因此实体名只能用选项传入，不能写成 `main reindex brands`。
+			entity := strings.TrimSpace(parser.GetOpt("entity", "").String())
+
+			if entity != "" {
+				fn, ok := reindexTargets[entity]
+				if !ok {
+					return gerror.Newf("未知实体 %q，已接入的实体：%s",
+						entity, strings.Join(reindexEntityNames(), ", "))
+				}
+				n, err := fn(ctx)
+				if err != nil {
+					return err
+				}
+				g.Log().Infof(ctx, "实体 %s 索引重建完成：%d 条", entity, n)
+				return nil
+			}
+
+			for _, name := range reindexEntityNames() {
+				n, err := reindexTargets[name](ctx)
+				if err != nil {
+					// 单个实体失败不阻断其他实体
+					g.Log().Errorf(ctx, "实体 %s 索引重建失败：%v", name, err)
+					continue
+				}
+				g.Log().Infof(ctx, "实体 %s 索引重建完成：%d 条", name, n)
+			}
+			return nil
+		},
+	}); err != nil {
+		panic(err)
+	}
+}
 
 func authMiddleware(r *ghttp.Request) {
 	publicPaths := map[string]bool{

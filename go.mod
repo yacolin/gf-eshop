@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bytedance/sonic v1.15.2
+	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/gogf/gf/contrib/drivers/mysql/v2 v2.6.1
 	github.com/gogf/gf/contrib/nosql/redis/v2 v2.6.1
 	github.com/gogf/gf/v2 v2.6.1

@@ -20,4 +20,7 @@ bin
 __pycache__/
 *.pyc
 
+# Go 构建缓存（沙箱内构建时使用的工作区本地缓存）
+.gocache/
+
 docs/inventory-api-requirements.md

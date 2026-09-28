@@ -148,6 +148,31 @@ def test_brands(base_url, token):
         count = len(r['data']['list']) if r['data']['list'] else 0
         print(f"    总共{total}条记录，当前页{count}条")
 
+    # 4.2 status 筛选回归：status=0 必须只返回禁用品牌
+    # （历史上被误判成「无筛选」，导致禁用筛选静默失效、返回全部品牌）
+    r = req("GET", f"{base_url}/api/v1/brands?status=0")
+    if ok(r, "4.2 品牌列表 status=0 筛选"):
+        items = r['data']['list'] or []
+        wrong = [x['id'] for x in items if x['status'] != 0]
+        check(not wrong,
+              f"status=0 仅返回禁用品牌（共{r['data']['total']}条，越界{len(wrong)}条）")
+
+    # 4.3 status=1 必须只返回启用品牌
+    r = req("GET", f"{base_url}/api/v1/brands?status=1")
+    if ok(r, "4.3 品牌列表 status=1 筛选"):
+        items = r['data']['list'] or []
+        wrong = [x['id'] for x in items if x['status'] != 1]
+        check(not wrong,
+              f"status=1 仅返回启用品牌（共{r['data']['total']}条，越界{len(wrong)}条）")
+
+    # 4.4 status 与首字母组合筛选
+    r = req("GET", f"{base_url}/api/v1/brands?status=0&first_letter=A")
+    if ok(r, "4.4 品牌列表 status+首字母 组合筛选"):
+        items = r['data']['list'] or []
+        wrong = [x['id'] for x in items if x['status'] != 0 or x['first_letter'] != 'A']
+        check(not wrong,
+              f"组合筛选结果正确（共{r['data']['total']}条，越界{len(wrong)}条）")
+
 
 def test_logout(base_url, token):
     print(f"\n{'='*60}")
