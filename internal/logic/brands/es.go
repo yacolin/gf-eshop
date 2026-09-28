@@ -20,6 +20,10 @@ const (
 	brandEntity = "brands"
 	// brandNGramMax 子串匹配的最大长度，覆盖 varchar(100) 的常见品牌名。
 	brandNGramMax = 32
+	// brandIndexSchema 索引结构版本。变更 mapping / analyzer / 字段语义时必须递增，
+	// 否则启动对账发现不了差异（文档数不变），旧索引会被一直沿用。
+	// v2：ngram 检索侧分析器由 keyword 改为与索引侧同一 tokenizer + operator=and。
+	brandIndexSchema = "v2"
 )
 
 // brandMapping 品牌索引结构。
@@ -62,7 +66,7 @@ func ReindexBrands(ctx context.Context) (int, error) {
 	}
 
 	alias := search.Alias(ctx, brandEntity)
-	index := search.VersionedIndex(ctx, brandEntity, time.Now().Format("20060102150405"))
+	index := search.VersionedIndex(ctx, brandEntity, brandIndexSchema+"_"+time.Now().Format("20060102150405"))
 
 	// 同一秒内重复重建会撞名，先清理以保证幂等
 	_ = search.DeleteIndex(ctx, index)
@@ -102,11 +106,20 @@ func WarmupES(ctx context.Context) (int, error) {
 	if !search.Available(ctx) {
 		return 0, search.ErrUnavailable
 	}
+	alias := search.Alias(ctx, brandEntity)
+
+	// 结构版本（mapping/analyzer）变更时计数对账发现不了，必须优先判断
+	prefix := search.SchemaIndexPrefix(ctx, brandEntity, brandIndexSchema)
+	if ok, err := search.AliasMatchesSchema(ctx, alias, prefix); err == nil && !ok {
+		g.Log().Infof(ctx, "品牌索引结构版本已变更（期望前缀 %s），执行全量重建", prefix)
+		return ReindexBrands(ctx)
+	}
+
 	dbCount, err := dao.Brands.Ctx(ctx).Count()
 	if err != nil {
 		return 0, err
 	}
-	esCount, err := search.Count(ctx, search.Alias(ctx, brandEntity))
+	esCount, err := search.Count(ctx, alias)
 	switch {
 	case err == nil && int64(dbCount) == esCount:
 		g.Log().Infof(ctx, "品牌 ES 索引与 DB 一致（%d 条），跳过重建", esCount)
@@ -179,8 +192,8 @@ func searchBrandsES(ctx context.Context, req *v1.BrandsListReq, page, size int) 
 		must = append(must, map[string]any{
 			"bool": map[string]any{
 				"should": []any{
-					map[string]any{"match": map[string]any{cols.Name + ".ngram": req.Name}},
-					map[string]any{"match": map[string]any{cols.EnglishName + ".ngram": req.Name}},
+					search.NGramMatch(cols.Name, req.Name),
+					search.NGramMatch(cols.EnglishName, req.Name),
 				},
 				"minimum_should_match": 1,
 			},

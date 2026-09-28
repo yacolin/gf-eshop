@@ -186,6 +186,28 @@ func AliasedIndices(ctx context.Context, alias string) ([]string, error) {
 	return out, nil
 }
 
+// AliasedIndex 返回别名当前指向的物理索引名；别名不存在时返回空串。
+func AliasedIndex(ctx context.Context, alias string) (string, error) {
+	indices, err := AliasedIndices(ctx, alias)
+	if err != nil || len(indices) == 0 {
+		return "", err
+	}
+	return indices[0], nil
+}
+
+// AliasMatchesSchema 判断别名当前指向的物理索引是否带有期望的结构版本前缀。
+// 别名不存在、或指向的索引前缀不符时返回 false。
+func AliasMatchesSchema(ctx context.Context, alias, prefix string) (bool, error) {
+	current, err := AliasedIndex(ctx, alias)
+	if err != nil {
+		return false, err
+	}
+	if current == "" {
+		return false, nil
+	}
+	return strings.HasPrefix(current, prefix), nil
+}
+
 // SwapAlias 把别名原子地指向 newIndex，并返回被摘除的旧索引。
 // 先 add 后 remove，保证任意时刻别名都至少指向一个索引，检索侧不出现空窗。
 func SwapAlias(ctx context.Context, alias, newIndex string) (removed []string, err error) {
@@ -223,8 +245,37 @@ func SwapAlias(ctx context.Context, alias, newIndex string) (removed []string, e
 
 // --- 写入 ---
 
-// BulkIndex 批量写入文档，返回成功条数。
+// DefaultBulkChunk 单次 _bulk 请求的默认文档数上限。
+// 一次性提交几十万文档会构造出超大请求体，必须分批。
+const DefaultBulkChunk = 500
+
+// BulkIndex 分批批量写入文档，返回成功条数。分批大小取 cfg.BulkChunk。
+// 某一批失败时立即返回，已完成的部分保持写入（调用方负责清理半成品索引）。
 func BulkIndex(ctx context.Context, index string, docs []Doc) (int, error) {
+	if len(docs) == 0 {
+		return 0, nil
+	}
+	chunk := Cfg(ctx).BulkChunk
+	if chunk <= 0 {
+		chunk = DefaultBulkChunk
+	}
+	total := 0
+	for start := 0; start < len(docs); start += chunk {
+		end := start + chunk
+		if end > len(docs) {
+			end = len(docs)
+		}
+		n, err := bulkChunk(ctx, index, docs[start:end])
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// bulkChunk 发送单批 _bulk 请求。
+func bulkChunk(ctx context.Context, index string, docs []Doc) (int, error) {
 	if len(docs) == 0 {
 		return 0, nil
 	}
@@ -379,4 +430,61 @@ func Search(ctx context.Context, index string, body map[string]any) (*SearchResu
 		out.Hits = append(out.Hits, h.Source)
 	}
 	return out, nil
+}
+
+// IsIndexNotFound 判断错误是否为「索引/别名尚未建立」，
+// 属首次重建前的正常状态，调用方通常据此触发全量重建而非报错。
+func IsIndexNotFound(err error) bool {
+	return errors.Is(err, ErrIndexNotFound)
+}
+
+// CollectStats 返回索引文档数与指定数值字段的合计，供启动对账使用。
+//
+// 用途：仅比对文档数无法发现「字段内容漂移」。例如 products 的
+// price_min/price_max 来自 SKU 聚合，SKU 改价后文档数不变但价格已过期，
+// 通过比对这些字段的 sum 就能识别出该重建（详见 products 的对账逻辑）。
+func CollectStats(ctx context.Context, index string, sumFields []string) (int64, map[string]float64, error) {
+	es, err := Client(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	aggs := make(map[string]any, len(sumFields))
+	for _, f := range sumFields {
+		aggs["sum_"+f] = map[string]any{"sum": map[string]any{"field": f}}
+	}
+	raw, err := json.Marshal(map[string]any{
+		"size":             0,
+		"track_total_hits": true,
+		"aggs":             aggs,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	res, err := es.Search(
+		es.Search.WithContext(ctx),
+		es.Search.WithIndex(index),
+		es.Search.WithBody(bytes.NewReader(raw)),
+	)
+	respBody, err := finish(ctx, res, err)
+	if err != nil {
+		return 0, nil, err
+	}
+	var parsed struct {
+		Hits struct {
+			Total struct {
+				Value int64 `json:"value"`
+			} `json:"total"`
+		} `json:"hits"`
+		Aggregations map[string]struct {
+			Value float64 `json:"value"`
+		} `json:"aggregations"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return 0, nil, err
+	}
+	sums := make(map[string]float64, len(sumFields))
+	for _, f := range sumFields {
+		sums[f] = parsed.Aggregations["sum_"+f].Value
+	}
+	return parsed.Hits.Total.Value, sums, nil
 }

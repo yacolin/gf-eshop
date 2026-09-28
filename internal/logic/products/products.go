@@ -15,6 +15,7 @@ import (
 	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
+	"gf-eshop/internal/search"
 	"gf-eshop/internal/service"
 )
 
@@ -47,7 +48,31 @@ func (s *sProducts) List(ctx context.Context, req *v1.ProductsListReq) (*v1.Prod
 		g.Log().Warningf(ctx, "ZSET list cache miss, fallback to DB: %v", err)
 	}
 
+	// 名称/价格筛选：优先走 ES（名称多字段子串检索 + 价格区间），
+	// ES 未启用、处于熔断冷却期、索引未建立或查询失败时自动降级回 DB。
+	// 无 name/price 的类目/品牌/状态组合仍由上面的 ZSET 路径承接，未被替换。
+	if search.Available(ctx) {
+		ids, hasMore, err := searchProductIDsES(ctx, req, cursorId, size)
+		if err == nil {
+			return buildListFromIDs(ctx, ids, hasMore)
+		}
+		g.Log().Warningf(ctx, "商品 ES 检索失败，降级 DB 查询: %v", err)
+	}
+
 	return s.listFromDB(ctx, req, cursorId, size)
+}
+
+// buildListFromIDs 按「已排好序且已裁剪」的 ID 列表组装列表响应。
+// ES 与 DB 两条路径共用，保证组装逻辑完全一致。
+func buildListFromIDs(ctx context.Context, ids []int64, hasMore bool) (*v1.ProductsListRes, error) {
+	if len(ids) == 0 {
+		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
+	}
+	products, err := listByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return buildListResponse(products, listProductStats(ctx, ids), hasMore), nil
 }
 
 // listFromZSET 通过 Redis ZSET 游标分页（仅筛选类目/品牌/状态）
@@ -70,20 +95,11 @@ func (s *sProducts) listFromZSET(ctx context.Context, req *v1.ProductsListReq, c
 	if err != nil {
 		return nil, err
 	}
-	if len(ids) == 0 {
-		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
-	}
 	hasMore := len(ids) > size
 	if hasMore {
 		ids = ids[:size]
 	}
-
-	// 按 ID 取完整实体并组装
-	products, err := listByIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	return buildListResponse(products, listProductStats(ctx, ids), hasMore), nil
+	return buildListFromIDs(ctx, ids, hasMore)
 }
 
 // listFromDB 通过数据库 keyset 游标分页（含名称/价格筛选）
@@ -92,20 +108,11 @@ func (s *sProducts) listFromDB(ctx context.Context, req *v1.ProductsListReq, cur
 	if err != nil {
 		return nil, err
 	}
-	if len(ids) == 0 {
-		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
-	}
 	hasMore := len(ids) > size
 	if hasMore {
 		ids = ids[:size]
 	}
-
-	// 按 ID 取完整实体并组装
-	products, err := listByIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	return buildListResponse(products, listProductStats(ctx, ids), hasMore), nil
+	return buildListFromIDs(ctx, ids, hasMore)
 }
 
 func (s *sProducts) Detail(ctx context.Context, req *v1.ProductsDetailReq) (*v1.ProductsDetailRes, error) {
@@ -219,6 +226,8 @@ func (s *sProducts) Create(ctx context.Context, req *v1.ProductsCreateReq) (*v1.
 	if productId > 0 {
 		productBloom.add(productId)
 	}
+	// 双写 ES（含最新价格区间）；失败只记日志，启动对账会修正
+	syncProductDoc(context.Background(), productId)
 	return &v1.ProductsCreateRes{Id: productId}, nil
 }
 
@@ -290,6 +299,8 @@ func (s *sProducts) CreateFull(ctx context.Context, req *v1.ProductsCreateFullRe
 		productBloom.add(productId)
 	}
 	delAllProductListCaches(context.Background())
+	// 双写 ES（含最新价格区间）
+	syncProductDoc(context.Background(), productId)
 	return &v1.ProductsCreateFullRes{Id: productId}, nil
 }
 
@@ -466,6 +477,8 @@ func (s *sProducts) BatchCreateSKUs(ctx context.Context, req *v1.ProductsBatchCr
 	}
 
 	delAllProductListCaches(context.Background())
+	// 新建 SKU 会改变商品的价格区间，需重新同步检索索引
+	syncProductDoc(context.Background(), req.ProductId)
 	return &v1.ProductsBatchCreateSKUsRes{
 		Total: len(items),
 		SKUs:  items,
@@ -533,6 +546,8 @@ func (s *sProducts) Update(ctx context.Context, req *v1.ProductsUpdateReq) (*v1.
 
 	delProductEntityCache(context.Background(), req.Id)
 	delAllProductListCaches(context.Background())
+	// 双写 ES：重新取库以保证文档与 DB 一致
+	syncProductDoc(context.Background(), req.Id)
 	return &v1.ProductsUpdateRes{}, nil
 }
 
@@ -636,6 +651,8 @@ func (s *sProducts) UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullRe
 
 	delProductEntityCache(context.Background(), req.Id)
 	delAllProductListCaches(context.Background())
+	// 双写 ES：全量更新可能改了名称/类目/品牌/状态，重新取库同步
+	syncProductDoc(context.Background(), req.Id)
 	return &v1.ProductsUpdateFullRes{}, nil
 }
 
@@ -645,5 +662,7 @@ func (s *sProducts) Delete(ctx context.Context, req *v1.ProductsDeleteReq) (*v1.
 	}
 	delProductEntityCache(context.Background(), req.Id)
 	delAllProductListCaches(context.Background())
+	// 双写 ES：从检索索引中移除
+	removeProductDoc(context.Background(), req.Id)
 	return &v1.ProductsDeleteRes{}, nil
 }

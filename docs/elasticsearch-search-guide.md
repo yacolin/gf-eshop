@@ -1,7 +1,8 @@
-# Elasticsearch 搜索接入指南（brands Pilot → products/skus 推广）
+# Elasticsearch 搜索接入指南（brands Pilot + products 落地）
 
-本文记录 gf-eshop 在 **brands** 模块上完成的 Elasticsearch 搜索 Pilot，作为后续
-products / skus 铺开的标准化方案参考。配套阅读：[缓存性能优化路径](./cache-optimization-guide.md)。
+本文记录 gf-eshop 接入 Elasticsearch 的完整过程：**brands** 作为 Pilot 跑通模式，
+**products** 作为正式落地兑现价值；`skus` 与相关度排序留作后续。
+配套阅读：[缓存性能优化路径](./cache-optimization-guide.md)。
 
 ---
 
@@ -98,7 +99,8 @@ Redis 路径保住了它。
 | 模块 | 建议 |
 |------|------|
 | brands（100 条字典表、C 端高频） | 保留 Redis 路径，成本极低 |
-| products / skus（几十万+） | **不要照抄全量缓存**；ES 扛组合条件，Redis 只做热点查询缓存 + 单条缓存 |
+| products（2025 条，组合筛选多） | **已落地**：类目/品牌/状态仍走 ZSET，名称 + 价格区间走 ES。索引只存检索投影，不存全量实体（见 §11） |
+| skus（几十万+） | **不要照抄全量缓存**；ES 扛组合条件，Redis 只做热点查询缓存 + 单条缓存 |
 
 ES 单节点实测天花板约 6.6k RPS。C 端筛选流量涨上去后，Redis 层可以顺势扩展成
 **热点筛选组合的查询缓存**（按查询签名缓存 ES 结果集），而不只是无筛选时的兜底 ——
@@ -156,6 +158,7 @@ elasticsearch:
   timeout: "3s"                      # 单次请求超时
   maxResultWindow: 10000             # from+size 超过此值直接回落 DB
   writeRefresh: "wait_for"           # 双写刷新策略，见 §6.3
+  bulkChunk: 500                     # 全量重建时单次 _bulk 的文档数上限（几十万级必须分批）
 ```
 
 ---
@@ -323,16 +326,26 @@ warmup stage "brands_es" done: 0 items
 
 ```
 internal/search/                    ← 可复用底座（与业务无关）
-├── client.go      客户端、配置、熔断、别名/索引命名
-├── analysis.go    IndexSettings / TextWithNGram / StoredOnly 等 mapping 构件
-└── index.go       EnsureIndex / BulkIndex / Search / SwapAlias / IndexDoc / DeleteDoc ...
+├── client.go      客户端、配置、熔断、别名/索引命名、schema 版本前缀
+├── analysis.go    IndexSettings / TextWithNGram / NGramMatch / StoredOnly 等构件
+└── index.go       EnsureIndex / BulkIndex(分批) / Search / CollectStats /
+                   SwapAlias / IndexDoc / DeleteDoc ...
 
-internal/logic/brands/es.go         ← brands 业务侧（其他模块照抄这一层即可）
-├── brandMapping()      索引结构
+internal/logic/brands/es.go         ← brands Pilot
+├── brandMapping()      索引结构（_source 存完整实体，直接用于响应）
 ├── ReindexBrands()     全量重建（新索引 → bulk → 切别名 → 删旧索引）
-├── WarmupES()          启动自愈对账
+├── WarmupES()          启动自愈对账（结构版本 + 文档数）
 ├── syncBrandDoc()      双写
 └── searchBrandsES()    检索
+
+internal/logic/products/es.go       ← products 正式落地
+├── productMapping()      索引结构（只存检索投影）
+├── buildProductDocs()    文档构建（复用 listProductStats 取价格区间）
+├── ReindexProducts()     分批读库 + 分批 bulk 重建
+├── WarmupES()            对账：结构版本 + 文档数 + 价格合计
+├── SyncSearchDoc()       供 skus 模块回调的导出方法
+├── syncProductDoc()      双写
+└── searchProductIDsES()  检索（只产出有序 ID，响应仍由 MySQL 组装）
 ```
 
 `internal/logic/brands/brands.go` 的改动点：
@@ -351,13 +364,31 @@ return listBrandsFromDB(ctx, req, page, size)   // 原筛选逻辑原样保留
 **无筛选路径没有被替换**，继续走既有的 Redis ZSET + Lua 一次往返（为什么保留见 §2.1）。
 唯一的后续改动是它的「无筛选」判定条件，即 §10.2 的 `?status=0` 修复。
 
+`internal/logic/products/products.go` 的改动点：
+
+```go
+// List：类目/品牌/状态组合仍走 ZSET；名称/价格筛选优先 ES，失败降级
+if req.Name == "" && req.PriceMin == 0 && req.PriceMax == 0 {
+    if result, err := s.listFromZSET(ctx, req, cursorId, size); err == nil {
+        return result, nil
+    }
+}
+if search.Available(ctx) {
+    if ids, hasMore, err := searchProductIDsES(ctx, req, cursorId, size); err == nil {
+        return buildListFromIDs(ctx, ids, hasMore)   // 响应组装与 DB 路径共用
+    }
+}
+return s.listFromDB(ctx, req, cursorId, size)
+```
+
 ---
 
 ## 八、运维命令
 
 ```bash
-./main reindex                    # 重建全部已接入实体
-./main reindex --entity=brands    # 只重建 brands
+./main reindex                     # 重建全部已接入实体（brands + products）
+./main reindex --entity=brands     # 只重建 brands
+./main reindex --entity=products   # 只重建 products
 ```
 
 > GoFrame `gcmd` 会把多余的位置参数当成**多级命令名**，
@@ -367,12 +398,13 @@ return listBrandsFromDB(ctx, req, page, size)   // 原筛选逻辑原样保留
 
 ```bash
 curl -X DELETE "http://localhost:9200/eshop_brands"
+curl -X DELETE "http://localhost:9200/eshop_products"
 ```
 
-查看索引状态：
+查看索引状态（注意物理索引名带结构版本，如 `eshop_products_v2_2026...`）：
 
 ```bash
-curl -s "http://localhost:9200/_cat/indices?h=index,docs.count" | grep brand
+curl -s "http://localhost:9200/_cat/indices?h=index,docs.count" | grep -E "brand|product"
 curl -s "http://localhost:9200/_cat/aliases?h=alias,index"
 ```
 
@@ -464,81 +496,187 @@ products/skus 铺开时若需要深翻页，应改用 `search_after`。
 任何时候都可以 `enabled: false` 一键关停，业务不受影响。ES 数据丢失也可通过
 `./main reindex` 或启动自愈从 MySQL 完整恢复。
 
+### 10.6 顺带发现：products 写接口的 `created_by` / `updated_by` 类型不匹配（未修）
+
+接入 products 时发现，`POST /api/v1/products` 在不传 `created_by` 时会直接失败：
+
+```
+Error 1366 (HY000): Incorrect integer value: '' for column 'created_by' at row 1
+```
+
+根因是 API 把这两个字段声明成了 `string`，而 DB 列是 `bigint NOT NULL`：
+
+| 位置 | 类型 |
+|------|------|
+| `api/products/v1/products.go`（`ProductsCreateReq.CreatedBy`、`ProductsUpdateReq.UpdatedBy` 等 4 处） | `string` |
+| `sp_products.created_by` / `updated_by` | `bigint NOT NULL` |
+
+空串被原样写进 bigint 列即报错；只有传数字字符串（如 `"created_by": "1"`）才成功。
+这是接入 ES **之前就存在**的缺陷（`git show HEAD` 可确认写法相同），
+与本次改动无关，已单独记录，未混在 ES 改动里修。
+
 ---
 
-## 十一、推广到 products / skus
+## 十一、products 接入实录（已完成）
 
-底座已经抽到 `internal/search`，新增实体只需三步：
+brands 是 Pilot，products 才是这套方案真正兑现价值的地方：**它原本唯一落 DB 的部分（名称搜索 + 价格区间）现在由 ES 承接**，
+而类目/品牌/状态因为 ZSET 是按筛选组合分 key 的，早已被 Redis 覆盖。
 
-**1. 定义 mapping**（照抄 `brandMapping()`）
+### 11.1 与 brands 的关键差异
 
-```go
-func productMapping() map[string]any {
-    cols := dao.Products.Columns()
-    return map[string]any{
-        "dynamic": false,
-        "properties": map[string]any{
-            cols.Id:        {"type":"long"},
-            cols.Name:      search.TextWithNGram(),
-            cols.CategoryId:{"type":"long"},          // 类目筛选
-            cols.BrandId:   {"type":"long"},          // 品牌筛选
-            cols.Price:     {"type":"scaled_float","scaling_factor":100},  // 价格区间
-            cols.Status:    {"type":"integer"},
-            "sku_codes":    {"type":"keyword"},       // SKU 反查（可选）
-            cols.CreatedAt: search.StoredOnly(),
-        },
-    }
-}
+| 维度 | brands（100 行） | products（2025 行） |
+|------|------------------|---------------------|
+| 分页方式 | offset（`page` / `page_size`） | **游标 keyset**（`cursor` = base64(id)） |
+| 排序 | `sort_order ASC, id DESC` | **`id DESC`**（列表不使用 `sort_order`） |
+| 缓存分工 | 无筛选走 Redis ZSET | **类目/品牌/状态组合**走 ZSET（每个组合一个 key） |
+| 真正落 DB 的 | 全部筛选 | **只有 `name` 搜索 + 价格区间** |
+| 响应字段 | ES 直接返回实体 | 需 SKU 聚合出 `price_min`/`price_max`/`total_stock` |
+| 同步面 | 仅商品写入 | 商品写入 **+ SKU 价格变更** |
+
+因为两条路径都是「先产出有序 ID，再统一 hydrate」（`listByIDs` + `listProductStats` + `buildListResponse`），
+ES 只需接管「选出哪些 ID、什么顺序」，响应组装完全复用既有逻辑。
+
+### 11.2 索引只存「检索投影」，不存全量实体
+
+products 字段多且含 `images` / `seo_*` 等大字段，而列表响应统一由 MySQL 侧组装，
+因此 ES 文档只保留参与筛选/排序的字段（`id`、`name`、`subtitle`、类目/品牌/状态、
+销量/评分、`price_min`/`price_max`）。
+
+这样索引体积与「可检索字段数」成正比，而不是与实体宽度成正比 —— 这是 products 与 brands 的重要区别
+（brands 的 `_source` 存的是完整实体，因为它直接用于响应）。
+
+### 11.3 游标分页 = `range(id < cursor)`，不需要 `search_after`
+
+DB 侧是 `WHERE id < cursorId ORDER BY id DESC`。因为**排序键本身就是 id**，
+ES 里用 `range: {id: {lt: cursorId}}` + `sort: [{id: desc}]` 即可，
+无需 `search_after` 的排序值数组。取 `size + 1` 条判断 `has_more`，与 DB 路径一致。
+
+### 11.4 价格区间：反范式 SKU 聚合，语义精确对齐
+
+DB 的价格筛选是：
+
+```sql
+id IN (SELECT product_id FROM sp_skus WHERE price >= PriceMin)
+AND id IN (SELECT product_id FROM sp_skus WHERE price <= PriceMax)
 ```
 
-**2. 实现重建 + 检索 + 双写**（照抄 `es.go`）
+即「存在一个 SKU ≥ min」且「存在一个 SKU ≤ max」。把 SKU 聚合出的区间反范式进文档后，
+这两条等价于：
 
-```go
-const productEntity = "products"
-const productNGramMax = 64          // 商品名更长，ngram 上限相应放大
-
-func ReindexProducts(ctx context.Context) (int, error) { /* 同 ReindexBrands */ }
-func WarmupES(ctx context.Context) (int, error)        { /* 同 WarmupES 对账 */ }
-func syncProductDoc(ctx context.Context, id int64)     { /* 同 syncBrandDoc */ }
-func searchProductsES(ctx context.Context, req *v1.ProductsListReq) (*v1.ProductsListRes, error) {
-    // 关键差异：筛选维度更多，注意哪些用 filter（不算分）、哪些用 must（算分）
-    //   类目/品牌/价格区间/库存状态 → filter
-    //   关键词 name/description     → must + should 组合
-}
+```
+price_max >= PriceMin  AND  price_min <= PriceMax
 ```
 
-**3. 登记运维命令**（`internal/cmd/cmd.go`）
+**语义精确一致**（都是「区间有交集」），不是近似。两个字段复用 `listProductStats` 计算，
+保证与列表响应里的 `price_min`/`price_max` 同源。
 
-```go
-var reindexTargets = map[string]func(context.Context) (int, error){
-    "brands":   brandsLogic.ReindexBrands,
-    "products": productsLogic.ReindexProducts,   // 新增
-    "skus":     skusLogic.ReindexSkus,           // 新增
-}
+### 11.5 价格漂移：为什么只比文档数不够
+
+`price_min`/`price_max` 来自 `sp_skus` 聚合，而 **SKU 改价不会改变商品文档数**。
+只做计数对账的话，改价后的价格区间筛选会一直用过期数据且无人察觉。
+
+因此 products 的启动对账额外比对**价格合计指纹**：
+
+```sql
+SELECT COUNT(*), SUM(mn), SUM(mx) FROM (
+  SELECT product_id, MIN(price) mn, MAX(price) mx
+  FROM sp_skus WHERE deleted_at IS NULL GROUP BY product_id
+) t
 ```
 
-### 铺开时要注意的差异
+与 ES 侧 `sum(price_min)` / `sum(price_max)` 对比，任一不符即全量重建。
+实测日志：`商品 ES 索引与 DB 一致（2025 条，价格合计 159728226/210931209），跳过重建`。
 
-| 事项 | brands（100 行） | products/skus（几十万行） |
-|------|------------------|---------------------------|
-| 重建方式 | 单次 bulk 全量 | **必须分片批量**（`BulkIndex` 按 500~1000 分批），注意 `BulkIndex` 当前一次塞完 |
-| 重建耗时 | < 1s | 需要评估，建议放独立命令 + 进度日志，别放启动阻塞路径 |
-| 深分页 | 不涉及 | 改 `search_after`，或限制最大页深 |
-| 同步方式 | 同步双写可接受 | 高频写入建议改**异步/消息队列**，避免拖慢写接口 |
-| 字段数量 | 10 个 | 商品字段多，`dynamic:false` + 显式登记更关键 |
-| 检索排序 | `sort_order` | 需引入 `_score` 相关性排序 + 业务权重 |
-| 索引体积 | 可忽略 | 关注 ngram 膨胀，`max_gram` 按需收敛，必要时只对 `name` 开 ngram |
+SKU 价格可以从**两个模块**修改，都必须触发重新同步：
 
-> `BulkIndex` 目前是「一次性写入全部 docs」，brands 100 行没问题；
-> 接入 products 前应先给它加上**分批逻辑**，否则几十万文档会构造出超大请求体。
+| 来源 | 处理方式 |
+|------|----------|
+| `internal/logic/products/repo_skus.go`（商品编辑器的批量 SKU） | 由商品侧 `CreateFull` / `UpdateFull` / `BatchCreateSKUs` 在事务提交后统一同步 |
+| `internal/logic/skus`（独立 SKU 管理） | 通过 `service.Products().SyncSearchDoc(ctx, productId)` 回调 |
+
+`logic/skus` 的 Update/Delete 会先取出 `product_id`（Delete 必须在软删除**之前**取），
+再回调同步；不这样做的话，从 SKU 管理页改价不会反映到价格筛选上。
+
+### 11.6 索引结构版本（schema version）
+
+**analyzer / mapping 变更不会改变文档数**，因此计数对账与价格合计都发现不了 ——
+旧索引会被一直沿用，改动看起来「没生效」。这类问题排查成本很高。
+
+解决办法：把结构版本编进**物理索引名**。
+
+```
+别名:      eshop_products
+物理索引:  eshop_products_v2_20260928200053
+                     ^^^ 结构版本
+启动对账先比对「别名指向的索引前缀是否为 eshop_products_v2_」，
+不符即全量重建。
+```
+
+> **改 mapping / analyzer / 字段语义时，必须递增对应模块的 schema 常量**
+> （`brandIndexSchema` / `productIndexSchema`），否则改动不会生效。
+
+实测有效：把 ngram 检索侧分析器从 `keyword` 改为「与索引侧同一 tokenizer + `operator=and`」后，
+重启自动把 `eshop_products_2026...` 换成了 `eshop_products_v2_2026...`，无需人工干预。
+
+### 11.7 一个必须修正的坑：ngram 检索侧分析器不能是 keyword
+
+最初的实现里，`ngram` 子字段的**检索侧**分析器用了 `keyword`（整串一个 token）。
+这只对「不含空格/标点的单段查询」有效：
+
+| 查询 | keyword 检索侧（错误） | 同一 tokenizer + and（正确） |
+|------|------------------------|------------------------------|
+| `手机` | 命中 ✓ | 命中 ✓ |
+| `三星e 青春版` | **搜不到**，且会返回一堆只命中副标题无关词的商品 | 精确命中 1 条 |
+| `Arc'teryx`（brands） | **搜不到**（撇号把索引侧切成了 arc + teryx） | 命中 ✓ |
+
+原因是索引侧的 ngram tokenizer 会在空格/标点处切断，整串 token 在索引里根本不存在。
+改为**检索侧与索引侧使用同一个 tokenizer，并在查询里加 `operator: and`**，
+即可还原「查询串作为连续子串出现」的语义。
+
+这个修复同时修好了 brands 的潜在缺陷（含撇号的品牌名）。
+
+### 11.8 验证结论
+
+| 验证项 | 结果 |
+|--------|------|
+| 16 个筛选/搜索用例 vs MySQL 基线 | ids 完全一致（含多词、价格区间、类目+品牌+状态组合） |
+| 游标翻页走完全量 2025 条 | 41 页、无重复、无遗漏，与 DB 全量 id 序列一致 |
+| SKU 改价联动 | 改价 → ES 文档价格区间同步 → 价格筛选命中集合翻转，还原后复原 |
+| ES 不可用降级 | 结果与 ES 路径一致（6~17ms），三层降级日志齐全 |
+| 双写 Create/Update/Delete | ES 文档即时可见/更新/移除 |
+| 启动对账 | 计数 + 价格合计一致时正确跳过重建 |
+
+### 11.9 行为变化（products，务必知悉）
+
+1. **多词查询语义变化（预期且更优）**：ES 按词 AND 匹配，不再要求字面子串。
+   例如 `三星 智能`：DB `LIKE '%三星 智能%'` 返回 **0** 条，
+   ES 返回 **4** 条（三星智能手机 / 三星智能彩光灯 / 三星智能灯泡 …）。
+   用户输入空格分词时，ES 的行为才符合直觉。
+2. **只按 `name` 匹配，刻意不含 `subtitle`**：subtitle 是 IK 词级检索，
+   与 name 的 ngram 子串语义不同，混进 `should` 会让「按商品名搜」返回
+   一堆只命中副标题无关词的商品（实测一次错配 5 条）。多字段检索应配合
+   按 `_score` 排序，属后续工作。
+3. **ES 降级期间**，多词查询会退化为 MySQL 字面 `LIKE`（返回更少，甚至 0 条）。
+   这是降级模式的预期差异。
+
+### 11.10 未来方向
+
+- **`skus` 业务接入**：目前 SKU 只通过商品间接进 ES（价格区间），独立 SKU 检索（按 sku_code/条码）尚未接入。
+- **相关度/销量/价格排序**：需要先把 `listByIDs` 改成**按入参顺序**返回。
+  它现在固定 `ORDER BY id DESC`，会覆盖 ES 算出的相关性顺序 —— 不先改这里，`_score` 排序无法生效。
+- **高频写入改异步**：products/skus 写入量远大于 brands，同步双写（`wait_for`）可能需要换成异步或消息队列。
 
 ---
 
 ## 十二、一句话总结
 
-brands 现在：**无筛选走 Redis（经实测保留，不是 ES 的过渡态），有筛选走 ES（新增多字段/子串检索），
-ES 挂了自动回落 MySQL，写入双写 + 启动自愈对账，重建靠别名切换零停机。**
-底座在 `internal/search`，products/skus 接入主要是「写 mapping + 抄一层 es.go」。
+**brands**：无筛选走 Redis（实测保留，不是 ES 的过渡态），有筛选走 ES（多字段/子串检索），
+ES 挂了自动回落 MySQL，写入双写 + 启动自愈对账，重建靠别名切换零停机。
 
-分工记两条轴：**查询形态决定走谁（无筛选→Redis / 有筛选→ES），流量画像决定要不要留 Redis 层**。
-products/skus 铺开时不要照抄 brands 的「ZSET 全量缓存」写法，见 §2.3。
+**products**：类目/品牌/状态仍走 Redis ZSET（按筛选组合分 key），
+`name` 搜索 + 价格区间交给 ES —— 这正是它原本唯一落 DB 的部分。
+索引只存检索投影，游标分页用 `range(id < cursor)`，价格区间由 SKU 聚合反范式且语义精确对齐；
+对账除文档数外还比对价格合计以发现改价漂移；结构版本编进物理索引名，mapping/analyzer 变更可自动重建。
+
+分工记两条轴：**查询形态决定走谁，流量画像决定要不要留 Redis 层**（§2.2）。
+改 mapping/analyzer 时**必须递增 schema 常量**，否则索引结构变更不会生效（§11.6）。

@@ -60,6 +60,9 @@ type Config struct {
 	// "wait_for"（默认）= 写完立即可检索，代价是最多等一个 refresh_interval；
 	// "" = 立即返回，文档在下次 refresh 后才可见（写入延迟最低）。
 	WriteRefresh string
+	// BulkChunk 单次 _bulk 请求的最大文档数（默认 500）。
+	// 几十万级全量重建必须分批，否则请求体过大且易被 ES 拒绝。
+	BulkChunk int
 }
 
 var (
@@ -79,6 +82,7 @@ func Cfg(ctx context.Context) Config {
 			Timeout:         g.Cfg().MustGet(ctx, "elasticsearch.timeout", defaultTimeout).Duration(),
 			MaxResultWindow: g.Cfg().MustGet(ctx, "elasticsearch.maxResultWindow", defaultMaxResultWindow).Int(),
 			WriteRefresh:    g.Cfg().MustGet(ctx, "elasticsearch.writeRefresh", "wait_for").String(),
+			BulkChunk:       g.Cfg().MustGet(ctx, "elasticsearch.bulkChunk", DefaultBulkChunk).Int(),
 		}
 		if len(c.Addresses) == 0 {
 			c.Addresses = []string{"http://127.0.0.1:9200"}
@@ -159,4 +163,14 @@ func Alias(ctx context.Context, entity string) string {
 // VersionedIndex 返回物理索引名，如 eshop_brands_20240928180000。
 func VersionedIndex(ctx context.Context, entity, suffix string) string {
 	return fmt.Sprintf("%s%s_%s", Cfg(ctx).IndexPrefix, entity, suffix)
+}
+
+// SchemaIndexPrefix 返回带「结构版本」的物理索引名前缀，如 eshop_products_v2_。
+//
+// 用途：analyzer / mapping 变更**不会**改变文档数，因此仅靠计数或字段合计
+// 对账发现不了，旧索引会被一直沿用。把结构版本编进物理索引名后，
+// 启动对账只要发现别名指向的索引前缀不符，就会自动重建。
+// 修改 mapping、analyzer 或字段语义时，请同步递增对应模块的 schema 常量。
+func SchemaIndexPrefix(ctx context.Context, entity, schema string) string {
+	return fmt.Sprintf("%s%s_%s_", Cfg(ctx).IndexPrefix, entity, schema)
 }

@@ -42,12 +42,36 @@ func IndexSettings(maxGram int) map[string]any {
 					"tokenizer": "ngram_tok",
 					"filter":    []string{"lowercase"},
 				},
-				// 检索侧：整体作为一个 token，避免把「苹果」拆成 苹/果 造成过度命中
+				// 检索侧必须与索引侧用**同一个** tokenizer：把查询串也切成
+				// 1..maxGram 的 n-gram，配合查询里的 operator=and，
+				// 即可还原「等价 LIKE '%x%'」的语义。
+				//
+				// 早期版本这里用 keyword（整串一个 token），只能匹配
+				// 不含空格/标点的单段查询：像 "三星e 青春版"、"iPhone 15"
+				// 这类含空格的名字，整串 token 在索引里根本不存在，
+				// 会直接搜不到（甚至被其他字段的宽松匹配顶出错误结果）。
 				"ngram_search": map[string]any{
 					"type":      "custom",
-					"tokenizer": "keyword",
+					"tokenizer": "ngram_tok",
 					"filter":    []string{"lowercase"},
 				},
+			},
+		},
+	}
+}
+
+// NGramMatch 构造针对某个 text 字段 ngram 子字段的 match 查询子句。
+//
+// operator=and 是必须的，不能省：ngram 分析器会把查询串切成 1..maxGram 的
+// 多个 gram，只有要求「全部 gram 都命中」，整体语义才等价于
+// 「查询串作为连续子串出现」（即 MySQL 的 LIKE '%x%'）。
+// 默认的 OR 语义会让「三星手机」匹配到只含「三星」或只含「手机」的记录。
+func NGramMatch(field, query string) map[string]any {
+	return map[string]any{
+		"match": map[string]any{
+			field + ".ngram": map[string]any{
+				"query":    query,
+				"operator": "and",
 			},
 		},
 	}

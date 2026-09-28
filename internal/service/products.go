@@ -19,6 +19,11 @@ type IProducts interface {
 	Update(ctx context.Context, req *v1.ProductsUpdateReq) (res *v1.ProductsUpdateRes, err error)
 	UpdateFull(ctx context.Context, req *v1.ProductsUpdateFullReq) (res *v1.ProductsUpdateFullRes, err error)
 	Delete(ctx context.Context, req *v1.ProductsDeleteReq) (res *v1.ProductsDeleteRes, err error)
+
+	// SyncSearchDoc 同步单个商品的检索索引。
+	// 供其他模块（如 skus）在改动 SKU 价格后调用 —— 索引中的
+	// price_min/price_max 来自 SKU 聚合，改价后必须重新同步。
+	SyncSearchDoc(ctx context.Context, productId int64)
 }
 
 var localProducts IProducts

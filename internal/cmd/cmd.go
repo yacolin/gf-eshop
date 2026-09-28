@@ -95,6 +95,9 @@ var (
 					productsLogic.NewFuncStage("products", func(ctx context.Context) (int, error) {
 						return productsLogic.Warmup(ctx)
 					}),
+					productsLogic.NewFuncStage("products_es", func(ctx context.Context) (int, error) {
+						return productsLogic.WarmupES(ctx)
+					}),
 					productsLogic.NewFuncStage("marketing", func(ctx context.Context) (int, error) {
 						marketingLogic.Warmup(ctx)
 						return 0, nil
@@ -234,7 +237,8 @@ var (
 // reindexTargets 已接入 ES 的业务实体 → 全量重建函数。
 // 后续 products / skus 接入时在此登记，即可自动获得 `main reindex <entity>` 能力。
 var reindexTargets = map[string]func(context.Context) (int, error){
-	"brands": brandsLogic.ReindexBrands,
+	"brands":   brandsLogic.ReindexBrands,
+	"products": productsLogic.ReindexProducts,
 }
 
 // reindexEntityNames 返回稳定排序的实体名，保证命令输出可预期。

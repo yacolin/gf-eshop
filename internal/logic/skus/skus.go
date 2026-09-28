@@ -114,6 +114,8 @@ func (s *sSkus) Create(ctx context.Context, req *v1.SkusCreateReq) (res *v1.Skus
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
+	// 新增 SKU 会改变所属商品的价格区间，同步检索索引
+	syncProductSearchIndex(ctx, req.ProductId)
 	return &v1.SkusCreateRes{Id: id}, nil
 }
 
@@ -177,15 +179,46 @@ func (s *sSkus) Update(ctx context.Context, req *v1.SkusUpdateReq) (res *v1.Skus
 	if err != nil {
 		return nil, err
 	}
+	// 价格可能已变，同步所属商品的检索索引（sku 为上面已加载的记录）
+	syncProductSearchIndex(ctx, sku[dao.Skus.Columns().ProductId].Int64())
 	return &v1.SkusUpdateRes{}, nil
 }
 
 func (s *sSkus) Delete(ctx context.Context, req *v1.SkusDeleteReq) (res *v1.SkusDeleteRes, err error) {
+	// 必须在软删除之前取出所属商品 ID（删除后该行会被 dao 过滤掉）
+	pid := productIDOfSku(ctx, req.Id)
+
 	_, err = dao.Skus.Ctx(ctx).Where(dao.Skus.Columns().Id, req.Id).Delete()
 	if err != nil {
 		return nil, err
 	}
+	// 删除 SKU 会改变商品价格区间，同步检索索引
+	syncProductSearchIndex(ctx, pid)
 	return &v1.SkusDeleteRes{}, nil
+}
+
+// productIDOfSku 查询 SKU 所属商品 ID；查不到返回 0。
+func productIDOfSku(ctx context.Context, skuId int64) int64 {
+	v, err := dao.Skus.Ctx(ctx).
+		Fields(dao.Skus.Columns().ProductId).
+		Where(dao.Skus.Columns().Id, skuId).
+		Value()
+	if err != nil || v == nil || v.IsNil() {
+		return 0
+	}
+	return v.Int64()
+}
+
+// syncProductSearchIndex 同步商品检索索引（best-effort）。
+//
+// 索引中的 price_min/price_max 由 sp_skus 聚合而来，而 SKU 价格可以从本模块
+// 独立修改。不触发同步的话，价格区间筛选会用到过期数据 —— 这类漂移不会改变
+// 文档数，因此仅靠启动时的计数对账发现不了。
+func syncProductSearchIndex(ctx context.Context, productId int64) {
+	if productId <= 0 {
+		return
+	}
+	service.Products().SyncSearchDoc(ctx, productId)
 }
 
 // loadSKUInventory 从 sp_inventories 查询 SKU 的可用库存
