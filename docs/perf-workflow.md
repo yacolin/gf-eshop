@@ -22,7 +22,7 @@ List 请求 ──→ 无筛选? ──→ EVAL Lua 脚本 ──→ ZCARD      
 ```
 存储模型：
 
-module:ids    (ZSET)    score=encode(sort_order, id)   member=id    TTL=10min
+module:ids    (ZSET)    score=id                        member=id    TTL=10min
 module:1      (String)  json 序列化的实体                            TTL=10min
 module:2      (String)  json 序列化的实体                            TTL=10min
 ...
@@ -101,8 +101,7 @@ return result
 
 func cacheKey(id int64) string { return fmt.Sprintf("product:%d", id) }
 
-// encodeScore 将 (sort_order, id) 编码为 ZSET score，
-// 保证 ZRANGE 结果按 sort_order ASC, id DESC 排列。
+// score 直接使用 id，保证 ZRANGE 结果按 id ASC 排列。
 func encodeScore(sortOrder int, id int64) float64 {
     return float64(int64(sortOrder)*scoreScale + (scoreScale - id))
 }
@@ -322,7 +321,7 @@ func (s *sProducts) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.Upda
     if err != nil {
         return nil, err
     }
-    // sort_order 可能变化，更新 ZSET score + 使详情缓存失效
+    // 更新 ZSET（score=id，幂等）+ 使详情缓存失效
     g.Redis().Do(context.Background(), "ZADD", idsKey, encodeScore(req.SortOrder, req.Id), req.Id)
     delEntityCache(context.Background(), req.Id)
     return &v1.UpdateRes{}, nil
@@ -410,7 +409,7 @@ redis:
 
 ### Q: 实体有自定义排序字段怎么办？
 
-`encodeScore` 已内置 `(sort_order, id)` 双字段排序。如需其他排序逻辑，修改 score 编码公式即可。
+当前列表 ZSET 的 `score` 就是 `id`，即 id 升序。如需其他排序逻辑，改 score 写入处即可。
 
 ### Q: ZSET 和实体缓存的 TTL 为什么要一样？
 

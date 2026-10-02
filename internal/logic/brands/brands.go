@@ -53,15 +53,12 @@ func (s *sBrands) List(ctx context.Context, req *v1.BrandsListReq) (res *v1.Bran
 		if err == nil && total > 0 {
 			return &v1.BrandsListRes{List: list, Total: total}, nil
 		}
-		// 最终兜底：直接查库
-		// 必须带上 id DESC 兜底排序：库中 sort_order 存在大量重复值
-		// （实测 23 组），只按 sort_order 排时并列行的顺序由 MySQL 决定，
-		// 会与缓存 Lua 路径（ZSET 分数内已含 id 降序）返回的顺序不一致，
-		// 导致降级期间同一接口排序突变、翻页出现重复或漏项。
+		// 最终兜底：直接查库。
+		// 排序统一为 id ASC —— 缓存 ZSET 的 score 就是 id、ES 也按 id asc，
+		// 三条路径顺序完全一致，降级或翻页时不会出现顺序突变/重复/漏项。
 		var dbAll []*entity.Brands
 		if err := dao.Brands.Ctx(ctx).
-			OrderAsc(dao.Brands.Columns().SortOrder).
-			OrderDesc(dao.Brands.Columns().Id).
+			OrderAsc(dao.Brands.Columns().Id).
 			Scan(&dbAll); err != nil {
 			return nil, err
 		}
@@ -110,7 +107,7 @@ func listBrandsFromDB(ctx context.Context, req *v1.BrandsListReq, page, size int
 		}, nil
 	}
 
-	err = m.Page(page, size).OrderAsc(dao.Brands.Columns().SortOrder).OrderDesc(dao.Brands.Columns().Id).Scan(&list)
+	err = m.Page(page, size).OrderAsc(dao.Brands.Columns().Id).Scan(&list)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +167,7 @@ func (s *sBrands) Create(ctx context.Context, req *v1.BrandsCreateReq) (res *v1.
 		return nil, err
 	}
 	id, _ := result.LastInsertId()
-	addBrandToIndex(context.Background(), id, req.SortOrder)
+	addBrandToIndex(context.Background(), id)
 	// 双写 ES：失败只记日志，DB 仍是唯一真相源，启动自愈会修正
 	syncBrandDoc(context.Background(), id)
 	return &v1.BrandsCreateRes{Id: id}, nil
@@ -197,7 +194,8 @@ func (s *sBrands) Update(ctx context.Context, req *v1.BrandsUpdateReq) (res *v1.
 	if err != nil {
 		return nil, err
 	}
-	g.Redis().Do(context.Background(), "ZADD", brandIdsKey, encodeBrandScore(req.SortOrder, req.Id), req.Id)
+	// score 与 member 都是 id：ZRANGE 升序即 id 升序
+	g.Redis().Do(context.Background(), "ZADD", brandIdsKey, req.Id, req.Id)
 	delBrandEntityCache(context.Background(), req.Id)
 	// 双写 ES：重新取库以保证 ES 中的文档与 DB 完全一致
 	syncBrandDoc(context.Background(), req.Id)

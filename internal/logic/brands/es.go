@@ -23,7 +23,10 @@ const (
 	// brandIndexSchema 索引结构版本。变更 mapping / analyzer / 字段语义时必须递增，
 	// 否则启动对账发现不了差异（文档数不变），旧索引会被一直沿用。
 	// v2：ngram 检索侧分析器由 keyword 改为与索引侧同一 tokenizer + operator=and。
-	brandIndexSchema = "v2"
+	// v3：列表排序由「sort_order asc, id desc」改为「id asc」，与 DB 分支和缓存 ZSET
+	//     三条路径统一（检索语义变更，按项目约定递增版本；索引结构本身未变，
+	//     故 mapping 仍保留 sort_order 供接口回显与后续可能的运营排序复用）。
+	brandIndexSchema = "v3"
 )
 
 // brandMapping 品牌索引结构。
@@ -41,6 +44,7 @@ func brandMapping() map[string]any {
 			cols.Name:        search.TextWithNGram(),
 			cols.EnglishName: search.TextWithNGram(),
 			cols.FirstLetter: map[string]any{"type": "keyword"},
+			// sort_order 仍登记（接口回显 + 后续可能复用），但已不参与列表排序
 			cols.SortOrder:   map[string]any{"type": "integer"},
 			cols.Status:      map[string]any{"type": "integer"},
 			cols.LogoUrl:     map[string]any{"type": "keyword", "index": false},
@@ -61,7 +65,7 @@ func ReindexBrands(ctx context.Context) (int, error) {
 		return 0, search.ErrUnavailable
 	}
 	var list []*entity.Brands
-	if err := dao.Brands.Ctx(ctx).OrderAsc(dao.Brands.Columns().SortOrder).Scan(&list); err != nil {
+	if err := dao.Brands.Ctx(ctx).OrderAsc(dao.Brands.Columns().Id).Scan(&list); err != nil {
 		return 0, err
 	}
 
@@ -170,7 +174,7 @@ func removeBrandDoc(ctx context.Context, id int64) {
 // 查询语义：
 //   - first_letter / status → term filter（精确筛选，不参与算分）
 //   - name → ngram 子串匹配，并同时命中 english_name（多字段检索，替代 LIKE '%x%'）
-//   - 排序 → sort_order asc, id desc，与改造前的 DB 分支完全一致
+//   - 排序 → id asc，与 DB 分支的 ORDER BY id ASC 完全一致（sort_order 不再参与排序）
 func searchBrandsES(ctx context.Context, req *v1.BrandsListReq, page, size int) (*v1.BrandsListRes, error) {
 	cfg := search.Cfg(ctx)
 	from := (page - 1) * size
@@ -205,9 +209,9 @@ func searchBrandsES(ctx context.Context, req *v1.BrandsListReq, page, size int) 
 		"size": size,
 		// 关闭 10000 条封顶的相对估算，返回精确 total
 		"track_total_hits": true,
+		// 只按 id 升序：与 DB 分支、缓存 ZSET 三条路径完全一致
 		"sort": []any{
-			map[string]any{cols.SortOrder: "asc"},
-			map[string]any{cols.Id: "desc"},
+			map[string]any{cols.Id: "asc"},
 		},
 		"query": map[string]any{
 			"bool": map[string]any{"filter": filters, "must": must},

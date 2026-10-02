@@ -145,22 +145,24 @@ if err := setBrandEntityCache(context.Background(), entity); err != nil {
 ```
 Redis 存储结构：
 
-brand:ids    (ZSET)    score=encode(sort_order, id)   member=id    TTL=10min
+brand:ids    (ZSET)    score=id                        member=id    TTL=10min
 brand:1      (String)  {"id":1,"name":"苹果",...}                  TTL=10min
 brand:2      (String)  {"id":2,"name":"华为",...}                  TTL=10min
 ...
 ```
 
-**Score 编码**：`sort_order * 10^12 + (10^12 - id)`
+**Score 编码**：`score = id`
 
-这样 ZRANGE 按 score ASC 排列时，自动满足「sort_order ASC, id DESC」的排序需求，无需额外排序。
+这样 ZRANGE 按 score ASC 排列的结果就是「id ASC」，无需额外排序，也和 DB 分支
+（`ORDER BY id ASC`）与 ES 分支（`sort: [{id: asc}]`）三条路径顺序完全一致。
+
+> 历史：早期用 `sort_order * 10^12 + (10^12 - id)` 编码「sort_order ASC, id DESC」，
+> 因为库中 `sort_order` 有大量重复值（实测 23 组），并列行的顺序依赖 MySQL 的默认行为，
+> 降级路径与缓存路径会不一致。现已统一为 id 升序，编码函数与 `brandScoreScale` 一并移除。
 
 ```go
-const brandScoreScale = 1_000_000_000_000
-
-func encodeBrandScore(sortOrder int, id int64) float64 {
-    return float64(int64(sortOrder)*brandScoreScale + (brandScoreScale - id))
-}
+// score 与 member 都是 id：ZRANGE 升序即 id 升序
+g.Redis().Do(ctx, "ZADD", brandIdsKey, id, id)
 ```
 
 #### 3.2 Lua 脚本：一次往返完成全部操作
@@ -322,14 +324,14 @@ func (s *sBrands) List(ctx context.Context, req *v1.ListReq) (res *v1.ListRes, e
 func (s *sBrands) Create(ctx context.Context, req *v1.CreateReq) (res *v1.CreateRes, err error) {
     result, err := dao.Brands.Ctx(ctx).Insert(...)
     id, _ := result.LastInsertId()
-    addBrandToIndex(context.Background(), id, req.SortOrder)
+    addBrandToIndex(context.Background(), id)
     return &v1.CreateRes{Id: id}, nil
 }
 
-// Update: 更新 ZSET score（sort_order 可能变化）+ 删旧详情缓存
+// Update: 重写 ZSET 成员（score=id，幂等）+ 删旧详情缓存
 func (s *sBrands) Update(ctx context.Context, req *v1.UpdateReq) (res *v1.UpdateRes, err error) {
     dao.Brands.Ctx(ctx).Data(...).Where(...).Update()
-    g.Redis().Do(context.Background(), "ZADD", brandIdsKey, encodeBrandScore(req.SortOrder, req.Id), req.Id)
+    g.Redis().Do(context.Background(), "ZADD", brandIdsKey, req.Id, req.Id)
     delBrandEntityCache(context.Background(), req.Id)
     return &v1.UpdateRes{}, nil
 }
@@ -727,19 +729,24 @@ func Func(ctx context.Context, parser *gcmd.Parser) error {
 
 ZSET 方案的优势：**缓存失效粒度最细**，变更一条数据只影响一个 key。
 
-### 5.2 Score 编码的陷阱
+### 5.2 Score 编码的陷阱：别再编码业务排序权重
 
 ```go
-const scoreScale = 1_000_000_000_000 // 10^12
-
-func encodeScore(sortOrder int, id int64) float64 {
-    return float64(int64(sortOrder)*scoreScale + (scoreScale - id))
-}
+// score 与 member 都是 id，ZRANGE 升序即 id 升序
+g.Redis().Do(ctx, "ZADD", brandIdsKey, id, id)
 ```
 
-- `10^12` 确保 `sort_order` 变化 1 时 score 跳变足够大，不会与 id 部分重叠
-- `(scoreScale - id)` 使同 sort_order 下大 id 的 score 更小 → ZRANGE ASC 时 id DESC
-- float64 精度约 15 位十进制，`10^12` 仅占 12 位，安全余量 3 位
+- 用 `id` 当 score，天然唯一、天然升序，不需要任何编码函数
+- 与 DB 分支（`ORDER BY id ASC`）和 ES 分支（`sort: [{id: asc}]`）顺序完全一致，
+  降级或翻页时不会出现顺序突变、重复或漏项
+- **教训**：早年用 `sort_order * 10^12 + (10^12 - id)` 把「sort_order ASC, id DESC」
+  编码进 score。问题在于库中 `sort_order` 有大量重复值（实测 23 组），
+  并列行的顺序只能靠编码里的 id 兜底；一旦某条路径漏了这个兜底（例如 DB 降级分支
+  只写了 `ORDER BY sort_order`），三条路径的顺序就会分叉 —— 实测前 20 条有 6 个位置不同。
+  现已统一为 id 升序，编码函数与 `brandScoreScale` 一并移除。
+- 只有当业务**确实**需要按运营权重排序时，才值得引入 score 编码；
+  且必须保证 DB / 缓存 / ES 三条路径使用完全相同的排序键与并列兜底键。
+  §4 的接入模板仍保留了 `encodeScore` 的写法，供这类场景参考。
 
 ### 5.3 为什么 ZSET 和实体必须同步 TTL？
 

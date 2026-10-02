@@ -117,7 +117,7 @@ make cli            # 下载并安装 gf CLI
 ### 缓存模式
 
 **brands / categories（Cache-Aside + 列表 ZSET）**
-- **缓存键**：`brand:<id>`、`category:<id>`；列表用 ZSET（`brand:ids`），分数编码排序权重
+- **缓存键**：`brand:<id>`、`category:<id>`；列表用 ZSET（`brand:ids`），**score 就是 id**，ZRANGE 升序即 id 升序（与 DB、ES 三条路径顺序统一）
 - **TTL**：10 分钟
 - **列表读取**：一次 Lua 往返完成 `ZCARD + ZRANGE + EXISTS + MGET`；
   缓存不完整时经 singleflight 单次重建

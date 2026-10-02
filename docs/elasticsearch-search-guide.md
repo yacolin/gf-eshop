@@ -208,7 +208,7 @@ ES 里存的 `_source` 就是**完整的 `entity.Brands` JSON**，因此 ES 返�
     "name":         search.TextWithNGram(),    // ik + ngram + kw 三路子字段
     "english_name": search.TextWithNGram(),
     "first_letter": {"type":"keyword"},
-    "sort_order":   {"type":"integer"},
+    "sort_order":   {"type":"integer"},        // 仅回显/备用，列表排序不再使用
     "status":       {"type":"integer"},
     "created_at":   search.StoredOnly(),       // {"type":"object","enabled":false}
     ...
@@ -226,7 +226,7 @@ ES 里存的 `_source` 就是**完整的 `entity.Brands` JSON**，因此 ES 返�
 filters: first_letter / status  → term（精确筛选，不参与算分）
 must:    name                   → bool.should[ name.ngram, english_name.ngram ]
                                   minimum_should_match: 1
-sort:    sort_order asc, id desc   // 与改造前 DB 分支完全一致
+sort:    id asc                   // 与 DB 分支 ORDER BY id ASC 完全一致
 ```
 
 ---
@@ -425,7 +425,8 @@ curl -s "http://localhost:9200/_cat/aliases?h=alias,index"
 | 中文子串 小米 / 华为 | 1 | 1 | 一致 | 一致 |
 | 翻页 A 第 1/2 页 size3 | 5 | 5 | 一致 | 一致 |
 
-**10/10 用例的 ids 顺序与 total 全部一致**（排序 `sort_order asc, id desc` 保持）。
+**10/10 用例的 ids 顺序与 total 全部一致**（当时排序为 `sort_order asc, id desc`；
+后续已统一改为 `id asc`，见 §11.1）。
 
 ### 9.2 多字段检索（本次新增能力）
 
@@ -441,7 +442,7 @@ curl -s "http://localhost:9200/_cat/aliases?h=alias,index"
 | 操作 | 验证点 | 结果 |
 |------|--------|------|
 | Create | ES 文档立即可见、可检索 | 通过 |
-| Update | ES 文档被替换（旧名查不到、新名查得到、sort_order 同步） | 通过 |
+| Update | ES 文档被替换（旧名查不到、新名查得到） | 通过 |
 | Update 失败 | DB 唯一键冲突时 ES 保留旧文档（与 DB 一致） | 通过 |
 | Delete | ES 文档立即移除，查不到 | 通过 |
 
@@ -527,7 +528,7 @@ brands 是 Pilot，products 才是这套方案真正兑现价值的地方：**�
 | 维度 | brands（100 行） | products（2025 行） |
 |------|------------------|---------------------|
 | 分页方式 | offset（`page` / `page_size`） | **游标 keyset**（`cursor` = base64(id)） |
-| 排序 | `sort_order ASC, id DESC` | **`id DESC`**（列表不使用 `sort_order`） |
+| 排序 | **`id ASC`**（与 DB、缓存 ZSET 三路统一） | **`id DESC`**（游标分页固定倒序） |
 | 缓存分工 | 无筛选走 Redis ZSET | **类目/品牌/状态组合**走 ZSET（每个组合一个 key） |
 | 真正落 DB 的 | 全部筛选 | **只有 `name` 搜索 + 价格区间** |
 | 响应字段 | ES 直接返回实体 | 需 SKU 聚合出 `price_min`/`price_max`/`total_stock` |
