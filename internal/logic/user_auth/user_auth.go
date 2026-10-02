@@ -3,11 +3,11 @@ package user_auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/os/gtime"
 	"golang.org/x/crypto/bcrypt"
 
 	"gf-eshop/api/user_auth/v1"
@@ -16,6 +16,7 @@ import (
 	"gf-eshop/internal/model/do"
 	"gf-eshop/internal/model/entity"
 	"gf-eshop/internal/service"
+	"gf-eshop/internal/verifycode"
 	"gf-eshop/utility"
 )
 
@@ -55,38 +56,9 @@ func (s *sUserAuth) Login(ctx context.Context, req *v1.UserLoginReq) (res *v1.Us
 		return nil, errcode.ErrInvalidCredentials
 	}
 
-	now := time.Now()
-	pair, err := utility.GenerateUserTokenPair(ctx, user.Id, user.Username)
+	pair, err := issueUserSession(ctx, user, "password")
 	if err != nil {
-		return nil, gerror.NewCode(errcode.Code(57), "生成Token失败")
-	}
-
-	ip := ""
-	device := ""
-	if r := g.RequestFromCtx(ctx); r != nil {
-		ip = r.GetClientIp()
-		device = r.Header.Get("User-Agent")
-		if len(device) > 100 {
-			device = device[:100]
-		}
-	}
-	_, _ = dao.Users.Ctx(ctx).Where(dao.Users.Columns().Id, user.Id).Update(do.Users{
-		LastLoginIp: ip,
-		LastLoginAt: gtime.New(now),
-	})
-	if _, err := dao.UsrLoginHistories.Ctx(ctx).Insert(do.UsrLoginHistories{
-		UserId:      user.Id,
-		LoginIp:     ip,
-		LoginDevice: device,
-		LoginMethod: "password",
-		LoginStatus: 1,
-	}); err != nil {
-		g.Log().Warning(ctx, "insert login history failed: %v", err)
-	}
-
-	refreshClaims, _ := utility.ParseUserToken(ctx, pair.RefreshToken)
-	if refreshClaims != nil {
-		saveUserRefreshToken(ctx, user.Id, refreshClaims.TokenId, utility.JwtRefreshExpire(ctx))
+		return nil, err
 	}
 
 	return &v1.UserLoginRes{
@@ -108,6 +80,35 @@ func (s *sUserAuth) Register(ctx context.Context, req *v1.UserRegisterReq) (res 
 		return nil, errcode.ErrUsernameAlreadyExists
 	}
 
+	email := utility.NormalizeEmail(req.Email)
+	if email != "" {
+		emailCount, err := dao.Users.Ctx(ctx).Where(dao.Users.Columns().Email, email).Count()
+		if err != nil {
+			return nil, err
+		}
+		if emailCount > 0 {
+			return nil, errcode.ErrEmailAlreadyExists
+		}
+	}
+
+	// 可选：携带邮箱验证码时校验邮箱归属，通过后把 email_verified 置为 1。
+	// 先做完占用检查再消费验证码，避免注册失败白白作废一个验证码。
+	emailVerified := 0
+	if emailCode := strings.TrimSpace(req.EmailCode); emailCode != "" {
+		if email == "" {
+			return nil, errcode.ErrInvalidParams
+		}
+		svc, svcErr := verifycode.Default(ctx)
+		if svcErr != nil {
+			g.Log().Errorf(ctx, "初始化验证码服务失败：%v", svcErr)
+			return nil, errcode.ErrVerifyChannelNotReady
+		}
+		if err = svc.Consume(ctx, verifycode.ChannelEmail, v1.VerifySceneRegister, email, emailCode); err != nil {
+			return nil, err
+		}
+		emailVerified = 1
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -118,13 +119,25 @@ func (s *sUserAuth) Register(ctx context.Context, req *v1.UserRegisterReq) (res 
 		ip = r.GetClientIp()
 	}
 
+	// email / phone 上有唯一索引且允许为 NULL，而 GoFrame 的 DO 结构体会自动 OmitNilData。
+	// 因此未填写时必须留 nil（落 DEFAULT NULL），写空串会撞唯一索引，
+	// 导致「第一个不带手机号的用户注册成功后，后续同类注册全部失败」。
+	var emailValue, phoneValue interface{}
+	if email != "" {
+		emailValue = email
+	}
+	if phone := strings.TrimSpace(req.Phone); phone != "" {
+		phoneValue = phone
+	}
+
 	userId, err := dao.Users.Ctx(ctx).InsertAndGetId(do.Users{
-		Username:     req.Username,
-		PasswordHash: string(hash),
-		Email:        req.Email,
-		Phone:        req.Phone,
-		Status:       1,
-		RegisterIp:   ip,
+		Username:      req.Username,
+		PasswordHash:  string(hash),
+		Email:         emailValue,
+		EmailVerified: emailVerified,
+		Phone:         phoneValue,
+		Status:        1,
+		RegisterIp:    ip,
 	})
 	if err != nil {
 		return nil, err

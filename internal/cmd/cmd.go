@@ -71,6 +71,7 @@ import (
 	reviewsCtrl "gf-eshop/internal/controller/reviews"
 	"gf-eshop/internal/controller/merchants"
 	"gf-eshop/internal/service"
+	"gf-eshop/internal/verifycode"
 	"gf-eshop/internal/ws"
 	"gf-eshop/utility"
 )
@@ -114,6 +115,8 @@ var (
 				pipeline.Run(ctx)
 				// 启动仪表盘定时刷新
 				service.Dashboard().StartPeriodicRefresh(ctx)
+				// 验证码渠道配置自检：只告警不阻断启动
+				warnVerifyConfigIfNeeded(ctx)
 
 			// 创建并启动 WebSocket Hub
 			wsHub := ws.NewHub()
@@ -330,4 +333,11 @@ func authMiddleware(r *ghttp.Request) {
 	}
 	r.SetCtxVar("staff_claims", claims)
 	r.Middleware.Next()
+}
+
+// warnVerifyConfigIfNeeded 启动时逐渠道自检验证码配置。
+// 只在日志里告警，不阻断启动：验证码属于可选能力，
+// 某渠道没配好只会让使用该渠道的接口返回 errcode.ErrVerifyChannelNotReady。
+func warnVerifyConfigIfNeeded(ctx context.Context) {
+	verifycode.WarnNotReady(ctx)
 }

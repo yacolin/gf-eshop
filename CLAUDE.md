@@ -73,6 +73,13 @@ make cli            # 下载并安装 gf CLI
 - **`internal/search/`** — **ES 共用底座，与业务无关**：客户端与熔断、索引/别名管理、
   分批 bulk、索引统计、schema 版本前缀、ngram 检索构件。业务模块只需提供自己的
   mapping 与文档转换（参考 `internal/logic/brands/es.go`、`internal/logic/products/es.go`）。
+- **`internal/verifycode/`** — **验证码共用底座，与业务无关**：生成、`sha256` 指纹存储、
+  重发冷却、单收件人/单 IP 日限额、失败次数上限、防邮箱枚举的「静默跳过」策略，
+  以及 `Sender` 渠道接口。邮件与短信只是渠道实现（`sender_email.go` / `sender_sms.go`）；
+  **接新渠道只需实现 `Sender`**，风控与校验完全复用。业务侧只提供场景合法性、
+  收件人↔账号映射与会话签发（参考 `internal/logic/user_auth/verification_code.go`）。
+  配置分三段：`email.*`（渠道参数）、`verifycode.*`（渠道无关风控）、`sms.*`。
+  详见 [`docs/email-verify-code-guide.md`](docs/email-verify-code-guide.md)。
 - **`main.go`** — 入口：导入 MySQL + Redis 驱动，导入 logic 包（触发 `init()`），运行 `cmd.Main.Run()`。
 - **`internal/cmd/cmd.go`** — 路由设置、中间件、**缓存与 ES 索引预热**、`reindex` 子命令。
 
@@ -179,3 +186,4 @@ roles/permissions 等共 40+）见 `internal/logic/`，目前未接入 ES。
 | [`docs/elasticsearch-search-guide.md`](docs/elasticsearch-search-guide.md) | ES 接入方案、products 接入实录、行为变化与坑位 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 待办事项与优先级 |
 | [`docs/perf-workflow.md`](docs/perf-workflow.md) | 压测流程 |
+| [`docs/email-verify-code-guide.md`](docs/email-verify-code-guide.md) | 验证码底座：渠道分层、配置、接口、风控与安全设计、到达率 |

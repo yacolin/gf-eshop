@@ -38,6 +38,16 @@ func TestNoDuplicateCodes(t *testing.T) {
 		ErrMerchantQualificationNotFound,
 		ErrMerchantWithdrawalNotFound,
 		ErrReviewNotFound,
+		ErrUsernameAlreadyExists,
+		ErrAddressNotFound,
+		ErrAddressLimit,
+		ErrVerifyCodeInvalid,
+		ErrVerifyCodeTooFrequent,
+		ErrVerifyCodeAttemptsExceed,
+		ErrVerifyCodeDailyLimit,
+		ErrVerifyChannelNotReady,
+		ErrVerifySendFailed,
+		ErrEmailAlreadyExists,
 	}
 
 	seen := make(map[int]string)

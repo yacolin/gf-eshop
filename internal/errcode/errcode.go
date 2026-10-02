@@ -58,6 +58,15 @@ const (
 	CodeAddressLimit       = 1013
 	CodeUsernameExists     = 1014
 
+	// 验证码域 1017-1023（渠道无关：email / sms 共用同一批码值）
+	CodeVerifyCodeInvalid        = 1017
+	CodeVerifyCodeTooFrequent    = 1018
+	CodeVerifyCodeAttemptsExceed = 1019
+	CodeVerifyCodeDailyLimit     = 1020
+	CodeVerifyChannelNotReady    = 1021
+	CodeVerifySendFailed         = 1022
+	CodeEmailAlreadyExists       = 1023
+
 	CodeBrandNotFound       = 4001
 	CodeCategoryNotFound    = 4010
 	CodeAttributeNotFound   = 4020
@@ -98,6 +107,16 @@ var (
 	ErrAddressNotFound      = New(CodeAddressNotFound, "地址不存在")
 	ErrAddressLimit         = New(CodeAddressLimit, "地址数量已达上限")
 	ErrUsernameAlreadyExists = New(CodeUsernameExists, "用户名已存在")
+
+	// 验证码（渠道无关）。1021/1022 的文案由调用方按渠道补全，
+	// 例如 errcode.Newf(CodeVerifyChannelNotReady, "%s服务未启用或配置不完整，请联系管理员", "邮件")
+	ErrVerifyCodeInvalid        = New(CodeVerifyCodeInvalid, "验证码错误或已过期")
+	ErrVerifyCodeTooFrequent    = New(CodeVerifyCodeTooFrequent, "验证码发送过于频繁，请稍后再试")
+	ErrVerifyCodeAttemptsExceed = New(CodeVerifyCodeAttemptsExceed, "验证码错误次数过多，请重新获取")
+	ErrVerifyCodeDailyLimit     = New(CodeVerifyCodeDailyLimit, "今日验证码发送次数已达上限")
+	ErrVerifyChannelNotReady    = New(CodeVerifyChannelNotReady, "验证码服务未启用或配置不完整，请联系管理员")
+	ErrVerifySendFailed         = New(CodeVerifySendFailed, "验证码发送失败，请稍后重试")
+	ErrEmailAlreadyExists       = New(CodeEmailAlreadyExists, "该邮箱已被绑定")
 	ErrOrderNotFound       = New(CodeOrderNotFound, "订单不存在")
 	ErrPaymentFailed       = New(CodePaymentFailed, "支付失败")
 	ErrInvalidCredentials  = New(CodeInvalidCredentials, "用户名或密码错误")
