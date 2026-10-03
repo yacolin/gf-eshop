@@ -1,0 +1,44 @@
+[Unit]
+Description=gf-eshop API (GoFrame 电商后端)
+After=network-online.target
+Wants=network-online.target
+# 若 MySQL/Redis 也在本机且由 systemd 管理，可放开下面这行，避免开机抢跑
+#After=mysql.service redis-server.service
+
+[Service]
+Type=simple
+# 建议用独立系统账号：useradd -r -s /sbin/nologin gfeshop
+User=gfeshop
+Group=gfeshop
+WorkingDirectory=/opt/gf-eshop
+# 走 start.sh：它负责切到应用目录（GoFrame 按工作目录找 manifest/config/config.yaml）
+# 并做配置体检；脚本内部用 exec，所以 systemd 跟踪的仍是应用进程本身。
+ExecStart=/opt/gf-eshop/start.sh
+Restart=on-failure
+RestartSec=3
+
+# 内存上限按「2G 小机器 + MySQL/Redis 同机」预算：
+#   应用实测约占 36MB（峰值同），512M 已是极宽裕的安全网（防内存泄漏拖垮数据库）
+#   给 MySQL 留 ~600MB、Redis ~150MB、系统 ~250MB，合计仍在 2G 内
+# 机器更大可以调高（例如 4G 机器给 1G/768M）。
+MemoryMax=512M
+MemoryHigh=448M
+
+# Go 软内存上限：接近 420MB 时让 GC 更积极，而不是直接被 cgroup OOM kill。
+# 比 MemoryMax 低一档是刻意的（GOMEMLIMIT 覆盖 Go 运行时全部内存）。
+Environment=GOMEMLIMIT=400MiB
+
+StandardOutput=journal
+StandardError=journal
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# 应用本身不写文件（logger.stdout=true，日志走 journal），这里只是留出可写目录，
+# 方便以后开文件日志或换配置。
+ReadWritePaths=/opt/gf-eshop
+
+[Install]
+WantedBy=multi-user.target
