@@ -108,6 +108,28 @@ func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*enti
 	return list, nil
 }
 
+// pageOrdersByCursor 走 keyset 分页：取 id 小于 beforeID 的一页（固定 id 倒序）。
+// beforeID 为 0 表示首页。分表后每片各取一页再归并即可，不需要 offset。
+func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, size int) ([]*entity.Orders, error) {
+	sh, err := shardForScan(ctx, "订单游标分页")
+	if err != nil {
+		return nil, err
+	}
+	m := listOrdersModel(ctx, sh, f)
+	if beforeID > 0 {
+		m = m.WhereLT(dao.Orders.Columns().Id, beforeID)
+	}
+	var list []*entity.Orders
+	err = m.
+		OrderDesc(dao.Orders.Columns().Id).
+		Limit(size).
+		Scan(&list)
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // listOrdersModel 组装列表查询的公共条件，保证 Count 与分页两条 SQL 的 WHERE 完全一致。
 func listOrdersModel(ctx context.Context, sh shard, f orderListFilter) *gdb.Model {
 	m := model(ctx, sh, tableOrders)

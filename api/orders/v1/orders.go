@@ -32,8 +32,10 @@ type OrdersCreateRes struct {
 
 type OrdersListReq struct {
 	g.Meta        `path:"/orders" tags:"Orders" method:"get" summary:"订单列表"`
-	Page          int    `json:"page"           description:"页码"`
-	PageSize      int    `json:"page_size"      description:"每页条数"`
+	Page          int    `json:"page"           description:"页码（与 cursor 二选一；offset 分页，仅不分表时精确）"`
+	PageSize      int    `json:"page_size"      description:"每页条数（配合 page）"`
+	Cursor        string `json:"cursor"         description:"游标：base64(上一页末位订单ID)，排序固定 id DESC。传 cursor 或 size 即走游标分页"`
+	Size          int    `json:"size"           description:"游标分页每页条数（默认 20，上限 100）"`
 	UserID        int64  `json:"user_id"        description:"用户ID"`
 	Status        string `json:"status"          description:"订单状态"`
 	PaymentStatus string `json:"payment_status"  description:"支付状态"`
@@ -42,7 +44,9 @@ type OrdersListReq struct {
 
 type OrdersListRes struct {
 	List  []*entity.Orders `json:"list"`
-	Total int              `json:"total"`
+	Total int              `json:"total"` // 游标分页时为 -1，表示未统计（分表后 COUNT 需要跨片）
+	// NextCursor 下一页游标；为空表示没有更多。仅在游标分页模式下返回。
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 type OrdersDetailReq struct {

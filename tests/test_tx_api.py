@@ -200,6 +200,41 @@ def test_list_orders(base_url):
         if r.get("code") == 0:
             print(f"    查到{r['data']['total']}条")
 
+    test_list_orders_cursor(base_url)
+
+
+def test_list_orders_cursor(base_url):
+    """3.4~3.6 游标（keyset）分页。
+
+    分表后 offset 分页无法跨片归并、COUNT 也要跨片，所以列表提供游标分页：
+    游标模式下 total 返回 -1（未统计），下一页游标由 next_cursor 给出。
+    """
+    # 3.4 首页：total 为 -1、给出 next_cursor
+    r = req("GET", f"{base_url}/api/v1/orders?size=5")
+    ok(r, "3.4 游标分页首页")
+    first_page_ids, next_cursor = [], ""
+    if r.get("code") == 0:
+        data = r["data"]
+        first_page_ids = [o["id"] for o in data["list"]]
+        next_cursor = data.get("next_cursor", "")
+        check(len(first_page_ids) == 5, "3.4.1 返回 5 条")
+        check(data["total"] == -1, "3.4.2 游标模式 total 为 -1（未统计）")
+        check(next_cursor != "", "3.4.3 返回 next_cursor")
+
+    # 3.5 用 next_cursor 翻下一页：与前页不重叠，且 id 更小
+    if next_cursor:
+        r = req("GET", f"{base_url}/api/v1/orders?size=5&cursor={next_cursor}")
+        ok(r, "3.5 用 next_cursor 翻第二页")
+        if r.get("code") == 0:
+            second_page_ids = [o["id"] for o in r["data"]["list"]]
+            check(not set(first_page_ids) & set(second_page_ids), "3.5.1 两页无重叠")
+            if second_page_ids:
+                check(max(second_page_ids) < min(first_page_ids), "3.5.2 第二页 id 全部小于第一页")
+
+    # 3.6 非法游标必须报错（不能静默当成首页）
+    r = req("GET", f"{base_url}/api/v1/orders?size=5&cursor=not-base64!!")
+    check(r.get("code") != 0, "3.6 非法游标被拒绝")
+
 
 def test_order_detail(base_url, order_no):
     print(f"\n{'='*60}")

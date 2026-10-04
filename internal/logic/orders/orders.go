@@ -279,6 +279,18 @@ func (s *sOrders) createOnce(
 }
 
 func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.OrdersListRes, err error) {
+	filter := orderListFilter{
+		UserID:        req.UserID,
+		Status:        req.Status,
+		PaymentStatus: req.PaymentStatus,
+		OrderNo:       req.OrderNo,
+	}
+
+	// 传 cursor 或 size 即走游标（keyset）分页；否则保持原有的 page/page_size 行为
+	if req.Cursor != "" || req.Size > 0 {
+		return s.listByCursor(ctx, req, filter)
+	}
+
 	page := req.Page
 	size := req.PageSize
 	if page <= 0 {
@@ -289,13 +301,6 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 	}
 	if size > 100 {
 		size = 100
-	}
-
-	filter := orderListFilter{
-		UserID:        req.UserID,
-		Status:        req.Status,
-		PaymentStatus: req.PaymentStatus,
-		OrderNo:       req.OrderNo,
 	}
 
 	total, err := countOrdersByFilter(ctx, filter)
@@ -316,6 +321,45 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 	return &v1.OrdersListRes{
 		List:  list,
 		Total: int(total),
+	}, nil
+}
+
+// listByCursor 游标分页。与 offset 分页的三点差异：
+//   - 不做 COUNT，total 返回 -1（分表后 COUNT 要跨 36 片 fan-out，不能放进列表接口）；
+//   - 用「上一页末位 id」作为游标，深翻页不会越翻越慢；
+//   - 返回 next_cursor，为空表示没有更多。
+func (s *sOrders) listByCursor(
+	ctx context.Context, req *v1.OrdersListReq, filter orderListFilter,
+) (*v1.OrdersListRes, error) {
+	size := req.Size
+	if size <= 0 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+
+	beforeID, err := decodeOrderCursor(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
+
+	list, err := pageOrdersByCursor(ctx, filter, beforeID, size)
+	if err != nil {
+		return nil, err
+	}
+	if list == nil {
+		list = make([]*entity.Orders, 0)
+	}
+
+	nextCursor := ""
+	if len(list) == size {
+		nextCursor = encodeOrderCursor(list[len(list)-1].Id)
+	}
+	return &v1.OrdersListRes{
+		List:       list,
+		Total:      -1, // 未统计
+		NextCursor: nextCursor,
 	}, nil
 }
 
