@@ -22,9 +22,9 @@
 
 ### 1.2 `git push`
 
-本地领先 `origin/main`，**未推送**（无 force-push 需求）。截至订单分表 Phase 1 完成时
-领先 8 个提交：`c466686`、`08b0416` + 本轮 6 个（`d998a47`、`a7a7359`、`ea94fb2`、
-`bfa5525`、`6e7c1ac`、`a3c87e6`）。
+本地领先 `origin/main`，**未推送**（无 force-push 需求）。截至订单分表 Phase 2 完成时
+领先 11 个提交：`c466686`、`08b0416`，其余 9 个是订单分表相关（Phase 0/1/2、P0 修复、
+测试修复、文档登记）。
 
 > 2026-10-04 更正：本节原先写的「停在 `c450516`、领先 3 个（`fb403e0`/`7b9f12b`/`a2e630b`）」
 > 已过期 —— 那三个提交早已在 `origin/main` 上。
@@ -39,10 +39,12 @@
 | **为什么不是原生分区** | 本项目订单查询全部按 `order_no`（WHERE 里没有 `created_at`）→ MySQL 分区裁剪完全失效，每次扫 36 个分区 |
 | **建议节奏** | 当前仅 2000 单 / 0.4 MB，**先做 Phase 0（可切换抽象）与 Phase 1（标识生成器）** —— 两者均已完成；Phase 2~4 等触到阈值再启动 |
 | **Phase 0 状态** | ✅ **已完成**（2026-10-04）。订单域 SQL 全部收敛进 `internal/logic/orders/repo_*.go`，新增路由层 `shard.go`（配置 `orderShard.mode`，默认 `single`）；`logic/payments`、`logic/dashboard` 已收回对订单表/DAO 的直接访问，改走 `service.Orders()`。**A/B 验证**：与 HEAD 逐字段对比 14 项（详情/列表筛选/翻页/错误路径/看板聚合）**零差异**；写路径另做 30+ 项 SQL 回查。路由契约测试见 `internal/logic/orders/shard_test.go` |
-| **Phase 1 阻塞原因** | 需业务表态三件事：① ~~单号内嵌时间（可路由）vs 泄漏单量~~ **已定：内嵌时间**；② 列表 `total` / 游标分页的前端改动（Phase 2~4 再谈）；③ ~~粒度按月还是按季~~ **已定：按月** |
+| **Phase 1 阻塞原因** | 需业务表态三件事：① ~~单号内嵌时间（可路由）vs 泄漏单量~~ **已定：内嵌时间**；② ~~列表 `total` / 游标分页的前端改动~~ **后端已实现（见 Phase 2 状态），剩前端适配**；③ ~~粒度按月还是按季~~ **已定：按月** |
 | **Phase 1 状态** | ✅ **已完成**（`bfa5525`）。单号改为 `ORD + YYYYMMDDHHMMSS + 每秒序列(6)`（Redis `INCRBY` + 降级 + 唯一键冲突重试）；`tx_orders.id` / `tx_order_items.id` 改为显式全局唯一 ID。**实测**：100 并发建单零重号；单号内嵌时间 ↔ 主键反解时间**秒级一致 100/100**；主键全部 < 2^53-1；可控撞号自动重试成功；Redis 不可用仍可建单；读路径与 Phase 0 对比 14 项零差异 |
 | **Phase 1 对设计文档的两处修正** | ① 原方案用 41 位毫秒雪花，会超过 JS 安全整数（2^53-1）导致前端**静默丢精度** → 改为 51 位「分钟(25)\|秒(6)\|序列(20)」布局；② `tx_order_items.id` 也被 `delivery_items` / `after_sales` 引用，**只换订单主键不够**，两张表都要换（原文档遗漏） |
-| **Phase 2 前置** | 所有写入方都改成显式主键后，需去掉 `tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT`，否则漏改的写入路径会拿到一个不含时间位的巨大自增值 |
+| **Phase 2 状态** | ✅ **已完成**（`b4a3fe1` `ccd5be7`）。新增 `main shard --action=create\|migrate\|verify` 三个命令；建成 2026-08/09 共 8 张分片表，迁入 2000 单 + 5025 明细 + 2000 条老主键映射 + 32 天日汇总；**对账 8 项（行数 + 全字段 CRC32 校验和 + 金额）全部通过，重跑 migrate 新增 0 行**；日汇总与主表直查逐项一致。`tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT` 已去掉 |
+| **Phase 2 的 DDL 归属** | DDL 一律改在 **schema 源仓库 `std-eshop-db`**（本仓库不放 DDL，避免两个来源）：基线 `sql/tx_p0.sql`/`tx_p1.sql`/`tx_p5.sql`，存量库迁移 `sql/migrations/V001__tx_order_sharding.sql`。已过该仓库的 `sql_lint.py` 与 `schema_diff.py`，并用两个临时库验证「全新基线」与「基线 + V001」**终态 schema 逐字节一致**；`pgsql/` 侧**尚未镜像**，已登记为待补 |
+| **Phase 2 的意外收获** | `decodeOrderID` 原先对任何正整数都能解出时间，**老自增主键 1..2000 会被解成 2024-01-01** 并路由到不存在的分片 → 已加 `legacyOrderIDMax` 阈值，老主键改走 `tx_order_shard_map`；`ShardOfOrderID` 是统一入口，无法定位时明确报错 |
 | **Phase 0 修正了文档一处错误** | GoFrame 的 `Insert` 会**无条件覆盖** `created_at`（`gdb_model_insert.go:311-321`），实测同一次建单四表相差 2~4 ms → 设计文档「三者必然同月」在月份级成立、毫秒级**不成立**，Phase 2 必须按文档 §5.3 的方案 A（`.Unscoped()`）处理跨月窗口 |
 | **顺带发现（前置必修）** | `generateOrderNo()` 后 4 位是 `rand(10000)`，@10 万单/日 **日均碰撞期望 5.8 次**、峰值秒内 86% —— 撞 `uk_order_no` 会让用户下单直接失败。修法（每秒序列）与路由天然统一 |
 | **改造面** | 业务代码只有 3 个文件（`logic/orders`、`logic/payments`、`logic/dashboard`）共 35 处引用，比看上去小 |
@@ -106,6 +108,16 @@
 | **验证** | `tests/test_tx_api.py` 28/28 通过且**连续两次运行都通过**（可重复执行）；脚本里硬编码的唯一 `transaction_id` 一并修掉 |
 | **防复发** | 本次已用 `information_schema` 全量比对「可空+唯一」列与代码里的 `"col": ""` 写法；后续新增写入路径应把建支付/退款/加购物车纳入回归 |
 
+### 2.6 前端适配订单列表的游标分页（`gf-eshop-fe` / `gf-eshop-miniprogram`）
+
+| 项 | 内容 |
+|----|------|
+| **背景** | 分表后 offset 分页无法跨片归并、`COUNT(*)` 要跨片 fan-out，后端已提供 keyset 游标分页（`ccd5be7`），需要两个前端仓库跟进 |
+| **新契约** | `GET /api/v1/orders?size=20[&cursor=<上一页的 next_cursor>]`；响应新增 `next_cursor`（为空表示没有更多）；**游标模式下 `total = -1` 表示未统计**，前端不要再显示「共 N 条」 |
+| **兼容性** | `page` + `page_size` 行为完全不变（`total` 仍精确），所以前端可以渐进迁移，不做也可以先不动 |
+| **待办** | 把订单列表从「页码 + total」改成「游标 + 上拉加载」；错误处理里补上「非法游标」这一种（后端会返回参数错误而不是空列表） |
+| **验证** | 前端翻到最后一页时 `next_cursor` 为空；切换筛选条件后游标重置（不要复用旧游标） |
+
 ---
 
 ## 三、已完成（归档对照）
@@ -122,6 +134,8 @@
 | 订单分表 Phase 1（标识生成器） | `bfa5525` | 单号 `ORD+时间+每秒序列`；订单/明细主键改 51 位全局唯一 ID（JS 安全）；Redis 降级 + 撞号重试；100 并发零重号 |
 | 修复交易域 4 处写入约束冲突（P0） | `ea94fb2` `bfa5525` | 见 §2.5：JSON 列、NOT NULL、可空+唯一、`Scan` ErrNoRows 四类；建单/支付/退款/加购四条路径恢复可用 |
 | 修复订单接口测试（鉴权 + 可重复执行） | `6e7c1ac` | 业务接口改用用户令牌（原先用 staff 令牌必然 401）；`transaction_id` 不再硬编码；28/28 且可重复执行 |
+| 订单分表 Phase 2（建分片 + 迁移 + 对账） | `b4a3fe1` | `main shard --action=create\|migrate\|verify`；8 张分片表、2000 单 + 5025 明细迁入、32 天日汇总回填；三重对账（行数 + 全字段 CRC32 + 金额）通过且可重复执行；去掉两个 `AUTO_INCREMENT` |
+| 订单列表游标分页（keyset） | `ccd5be7` | `size` + `cursor`（base64(id)，与 products 一致）、`next_cursor`、游标模式 `total=-1`；page 模式行为不变；套件 36/36，前端适配见 §2.6 |
 
 ---
 

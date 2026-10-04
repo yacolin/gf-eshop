@@ -265,9 +265,12 @@ ORD + YYYYMMDDHHMMSS(14) + 序号(6)      → 23 字符，varchar(32) 放得下
 
 `decodeOrderID()` 已随 Phase 1 落地并单测覆盖（含月末/年末边界）。
 
-> 📌 **Phase 2 待办**：等所有写入方都改成显式指定主键后，把 `tx_orders.id` /
-> `tx_order_items.id` 的 `AUTO_INCREMENT` 去掉 —— 否则某条漏改的写入路径会拿到一个
-> 巨大的自增值（不含时间位），成为一个「无法按 id 路由」的脏数据。
+> ✅ **已完成（Phase 2）**：`tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT` 已去掉。
+> DDL 归 **schema 源仓库 `std-eshop-db`** 管理（本仓库不放 DDL，避免两个来源）：
+> 基线 `sql/tx_p0.sql`、`sql/tx_p1.sql`、`sql/tx_p5.sql`；
+> 存量库前向升级 `sql/migrations/V001__tx_order_sharding.sql`。
+> 去掉之后，任何漏改的、不带 id 的 INSERT 会直接报 `Error 1364` —— 实测确认，
+> **宁可写入失败，也不要产生一个不含时间位、无法按 id 路由的脏主键**。
 
 **必须定一条铁律 —— 单一时间基准**：
 
@@ -328,7 +331,8 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 | 支付回调按 `order_no` 回写 | 同上 | 无 |
 | `POST /orders` 建单 | 定单一时间基准 → 落当前月分片 | 无 |
 | `GET /orders?order_no=x` | **退化为分片内条件查询**（其实等价于点查） | 无 |
-| `GET /orders?page&page_size` | `COUNT(*)` 变跨片归并；offset 深翻页不可行 → **改游标分页**（keyset：`(created_at, id)`，各片取 topK 后归并） | ⚠️ **API 变更** |
+| `GET /orders?page&page_size` | 保留（offset 分页，分表后**只有单表模式精确**） | 无 |
+| `GET /orders?size&cursor` | ✅ **已实现**（Phase 2）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`（不统计）。分片后各片各取一页再归并即可 | 新增（与 products 的游标约定一致） |
 | `GET /orders?user_id=x` 无时间窗 | 默认**强制近 N 个月**（如 12 个月），否则 fan-out 全部活跃片 | ⚠️ 行为变更 |
 | dashboard 全部聚合 | 改走**日汇总表**（§5.6） | 需新增表与写入钩子 |
 | 「今天待发货」这类**按业务时间+状态**的运营检索 | `created_at` 分表**无法覆盖** → **必须走 ES**（§5.7） | 新增能力 |
@@ -368,6 +372,8 @@ CREATE TABLE tx_order_daily_stats (
   每片一次聚合，秒级完成。
 - 有了它，看板的「订单总数/营收/7 日趋势/状态分布」全部变成**单表单行/单表索引查询**，
   与分片数无关 —— 也就不需要 fan-out 归并逻辑（比 fan-out 更简单也更稳）。
+- **进度**：表已建、历史已回填（Phase 2，实测 32 天，与主表直查逐项一致）；
+  看板**读路径的切换**放在 Phase 4，与读路径灰度一起做。
 
 ### 5.7 订单检索索引（ES）
 
@@ -467,19 +473,46 @@ CREATE TABLE tx_order_daily_stats (
   - 读路径与 Phase 0 逐字段对比 14 项依然零差异；`tests/test_tx_api.py` 28/28 通过且可重复执行。
 - 回滚：`orderNo.mode=legacy` 退回旧单号格式；新老格式路由兼容，回滚不产生脏数据。
 
-### Phase 2：建分片 + 历史迁移
+### Phase 2：建分片 + 历史迁移 ✅ 已完成
 
-- 动作：
-  1. 用 `CREATE TABLE tx_orders_202608 LIKE tx_orders` 批量建好历史月份分片；
-  2. 按 `created_at` 分月 `INSERT ... SELECT`，**按 `id` 区间分批（每批 5,000 行）**，
-     避免大事务与主从延迟；注意 `CHECK` 约束需满足；
-  3. 顺手生成老数据 `order_id → shard` 映射；
-  4. 回填 `tx_order_daily_stats`。
-- 验证（**三重对账，缺一不可**）：
-  - 行数：`COUNT(*)` 按月对比；
-  - 金额：`SUM(pay_amount)`、`SUM(total_amount)` 对比（行数对不代表数据对）；
-  - 抽样：随机 100 单逐字段哈希比对。
-- 回滚：分片表是新增的，删掉即可；主表未动。
+- 动作（全部落地为命令，见下方「运维命令」）：
+  1. `CREATE TABLE ... LIKE` 批量建好月份分片（幂等，4 张表 × 每个月）；
+  2. 按 `created_at` 分月 `INSERT ... SELECT`，**按 id 区间分批**（默认每批 5,000 行）；
+  3. 登记老数据 `order_id → shard` 映射（新主键可反解，不入表）；
+  4. 从**该月分片**回填 `tx_order_daily_stats`（每天必然只落在一个月分片里）。
+- 与计划的差异：对账的第三项从「抽样 100 单逐字段哈希」升级为
+  **全字段 CRC32 校验和**（列名从 `information_schema` 动态取，自动适配后续加列）。
+  抽样只能证明「没抽到的地方没坏」，全字段校验和是 O(1) 的全量证据。
+- 幂等性：写数据统一用 `ON DUPLICATE KEY UPDATE`（**不用 `INSERT IGNORE`** ——
+  后者会把 `CHECK` 约束冲突降级成告警并丢行，等于静默丢数据）。
+- 实测（当前库 2000 单 / 5025 明细）：
+  - 建分片：8 张表（2026-08、2026-09）就绪；
+  - 迁移：202608 迁 1595 单 + 4027 明细，202609 迁 405 单 + 998 明细，合计 2000 / 5025，
+    与主表逐一对上；登记老主键映射 2000 行；日汇总回填 32 天；
+  - 对账：8 项（2 月 × 4 表）行数 / 校验和 / 金额**全部通过**；
+  - **重跑 migrate 新增 0 行**，再次对账仍全通过（可重复执行）；
+  - 日汇总与主表直查一致：订单数 2000=2000、GMV 3097410823=3097410823、
+    实收 2127606184=2127606184。
+- 回滚：分片表、映射表、汇总表都是**新增**对象，`DROP` 即可；主表未被改动。
+
+**运维命令**（照 `main reindex` 的写法，选项传参，不能写位置参数）：
+
+```bash
+./main shard --action=create  --from=2026-08 --to=2026-09
+./main shard --action=migrate --from=2026-08 --to=2026-09 [--batch=5000]
+./main shard --action=verify  --from=2026-08 --to=2026-09
+```
+
+**主键 → 分片的统一入口**：`ShardOfOrderID(ctx, id)` ——
+新主键（`>= 1<<40`）直接反解月份；老主键查 `tx_order_shard_map`；
+两者都不匹配则**明确报错**，绝不猜一个分片。实测三种情况都符合预期。
+
+> ⚠️ `decodeOrderID` 对 `id < 1<<40` 一律返回失败：迁移前的自增主键在数学上也能
+> 解出一串位（会得到 2024-01-01），不设阈值就会把老订单路由到不存在的分片。
+>
+> 📌 **Phase 4 待办**：`tx_order_shard_map` 与 `tx_order_daily_stats` 目前走原始 SQL
+> （`g.DB().Exec/GetValue`）。等看板读路径切到汇总表时，把这两张表加进
+> `hack/config.yaml` 的 `tables` 并跑 `gf gen dao`，换成 DAO 访问。
 
 ### Phase 3：开双写 + 影子读对账
 
