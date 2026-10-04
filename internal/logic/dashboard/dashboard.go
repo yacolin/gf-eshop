@@ -189,45 +189,21 @@ func (s *sDashboard) computeSummary(ctx context.Context) (v1.SummaryDTO, error) 
 	}
 	summary.LowStockCount = int64(n)
 
-	// 订单总数
-	n, err = dao.Orders.Ctx(ctx).Count()
+	// 订单规模与营收：订单表只能经 service.Orders() 访问（见 docs/order-sharding-design.md），
+	// 分表后这里会改走日汇总表，看板侧不需要跟着改。
+	orderStats, err := service.Orders().StatsSummary(ctx)
+	summary.TotalOrders = orderStats.TotalOrders
+	summary.TotalRevenue = orderStats.TotalRevenue
 	if err != nil {
-		return summary, fmt.Errorf("count orders: %w", err)
+		return summary, fmt.Errorf("order summary: %w", err)
 	}
-	summary.TotalOrders = int64(n)
-
-	// 营收总额（已支付订单的 pay_amount 总和）
-	var revenue struct {
-		Value int64 `orm:"value"`
-	}
-	err = g.DB().Model("tx_orders").
-		Fields("COALESCE(SUM(pay_amount), 0) AS value").
-		Where("payment_status", "paid").
-		Where("deleted_at IS NULL").
-		Scan(&revenue)
-	if err != nil {
-		return summary, fmt.Errorf("sum revenue: %w", err)
-	}
-	summary.TotalRevenue = revenue.Value
 
 	return summary, nil
 }
 
 func (s *sDashboard) computeOrderTrend(ctx context.Context) []v1.OrderTrendDTO {
-	type trendRow struct {
-		Date   string `orm:"date"`
-		Count  int64  `orm:"count"`
-		Amount int64  `orm:"amount"`
-	}
-	var rows []trendRow
 	sevenDaysAgo := gtime.Now().AddDate(0, 0, -6).Format("Y-m-d") + " 00:00:00"
-	err := g.DB().Model("tx_orders").
-		Fields("DATE_FORMAT(created_at, '%m-%d') AS date", "COUNT(*) AS count", "COALESCE(SUM(pay_amount), 0) AS amount").
-		Where("created_at >= ?", sevenDaysAgo).
-		Where("deleted_at IS NULL").
-		Group("date").
-		Order("date ASC").
-		Scan(&rows)
+	rows, err := service.Orders().DailyTrend(ctx, sevenDaysAgo)
 	if err != nil {
 		g.Log().Warningf(ctx, "query order trend: %v", err)
 		return make([]v1.OrderTrendDTO, 0)
@@ -256,15 +232,7 @@ func (s *sDashboard) computeOrderTrend(ctx context.Context) []v1.OrderTrendDTO {
 }
 
 func (s *sDashboard) computeOrderStatusDist(ctx context.Context) []v1.StatusDistDTO {
-	type statusRow struct {
-		Status string `orm:"status"`
-		Value  int64  `orm:"value"`
-	}
-	var rows []statusRow
-	err := dao.Orders.Ctx(ctx).
-		Fields(dao.Orders.Columns().Status, "COUNT(*) AS value").
-		Group(dao.Orders.Columns().Status).
-		Scan(&rows)
+	rows, err := service.Orders().StatusDistribution(ctx)
 	if err != nil {
 		g.Log().Warningf(ctx, "query order status dist: %v", err)
 		return make([]v1.StatusDistDTO, 0)
@@ -387,19 +355,7 @@ func (s *sDashboard) computeInventoryStatusDist(ctx context.Context) ([]v1.Statu
 }
 
 func (s *sDashboard) computeTopProducts(ctx context.Context) []v1.TopProductDTO {
-	type topRow struct {
-		ProductId int64 `orm:"product_id"`
-		Count     int64 `orm:"count"`
-		Amount    int64 `orm:"amount"`
-	}
-	var rows []topRow
-	err := g.DB().Model("tx_order_items").
-		Fields("product_id", "COUNT(*) AS count", "COALESCE(SUM(subtotal), 0) AS amount").
-		Where("deleted_at IS NULL").
-		Group("product_id").
-		Order("count DESC, amount DESC").
-		Limit(10).
-		Scan(&rows)
+	rows, err := service.Orders().TopProducts(ctx, 10)
 	if err != nil {
 		g.Log().Warningf(ctx, "query top products: %v", err)
 		return make([]v1.TopProductDTO, 0)

@@ -17,6 +17,10 @@ import (
 	"gf-eshop/utility"
 )
 
+// 本文件只做业务编排：所有订单表（tx_orders / tx_sub_orders / tx_order_items / tx_order_logs）
+// 的 SQL 都在同目录的 repo_*.go 里，分片路由在同目录的 shard.go 里。
+// 商品 / SKU / 库存不属于订单域，仍直接走各自 DAO。
+
 type sOrders struct{}
 
 func init() {
@@ -31,12 +35,15 @@ var validTransitions = map[string][]string{
 	"delivered": {"completed"},
 }
 
-func generateOrderNo() string {
-	return fmt.Sprintf("ORD%s%04d", gtime.Now().Format("YmdHis"), grand.Intn(10000))
+// generateOrderNo 生成父订单号：ORD + 创建时间 + 随机后缀。
+// 时间由调用方以「单一时间基准」传入，保证单号与 created_at 落在同一个月（分片一致）。
+func generateOrderNo(now *gtime.Time) string {
+	return fmt.Sprintf("ORD%s%04d", now.Format("YmdHis"), grand.Intn(10000))
 }
 
-func generateSubOrderNo() string {
-	return fmt.Sprintf("SUB%s%04d", gtime.Now().Format("YmdHis"), grand.Intn(10000))
+// generateSubOrderNo 生成子订单号：SUB + 创建时间 + 随机后缀，时间基准同父订单。
+func generateSubOrderNo(now *gtime.Time) string {
+	return fmt.Sprintf("SUB%s%04d", now.Format("YmdHis"), grand.Intn(10000))
 }
 
 // resolveUserID 从 ctx 或 req 获取用户ID
@@ -51,11 +58,16 @@ func resolveUserID(ctx context.Context, userID int64) int64 {
 }
 
 func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.OrdersCreateRes, err error) {
-	orderNo := generateOrderNo()
+	// 单一时间基准：这一个 now 同时派生单号、created_at 与分片。
+	// 分表后单号/created_at 必须落在同一个月，否则读路径与写路径会命中不同分片。
+	now := gtime.Now()
+	orderNo := generateOrderNo(now)
+	subOrderNo := generateSubOrderNo(now)
+	sh := shardFromCreatedAt(ctx, now)
 	userID := resolveUserID(ctx, req.UserId)
 
 	var order *entity.Orders
-	err = dao.Orders.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = withOrdersTx(ctx, func(ctx context.Context, tx gdb.TX) error {
 		var totalAmount, payAmount int64
 		type itemData struct {
 			SkuId       int64
@@ -93,7 +105,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			}
 			availableQty := inv.Quantity - inv.Reserved
 			if availableQty < int64(ri.Quantity) {
-			return errcode.Newf(errcode.CodeInsufficientStock, "SKU库存不足: %d (可用%d, 需要%d)", ri.SkuID, availableQty, ri.Quantity)
+				return errcode.Newf(errcode.CodeInsufficientStock, "SKU库存不足: %d (可用%d, 需要%d)", ri.SkuID, availableQty, ri.Quantity)
 			}
 
 			// 获取商品名称（从 SPU 表）
@@ -134,34 +146,33 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		}
 
 		// 写入主订单
-		orderId, err := tx.Model("tx_orders").InsertAndGetId(g.Map{
-			"order_no":       orderNo,
-			"user_id":        userID,
-			"total_amount":   totalAmount,
-			"pay_amount":     payAmount,
-			"shipping_fee":   0,
+		orderId, err := insertOrder(ctx, sh, g.Map{
+			"order_no":        orderNo,
+			"user_id":         userID,
+			"total_amount":    totalAmount,
+			"pay_amount":      payAmount,
+			"shipping_fee":    0,
 			"discount_amount": 0,
-			"status":         "pending",
-			"payment_status": "unpaid",
-			"consignee":      req.Consignee,
-			"phone":          req.Phone,
-			"province":       req.Province,
-			"city":           req.City,
-			"district":       req.District,
-			"detail_addr":    req.DetailAddr,
-			"zip_code":       req.ZipCode,
-			"coupon_id":      req.CouponID,
-			"buyer_remark":   req.BuyerRemark,
-			"source":         req.Source,
-			"created_at":     gtime.Now(),
+			"status":          "pending",
+			"payment_status":  "unpaid",
+			"consignee":       req.Consignee,
+			"phone":           req.Phone,
+			"province":        req.Province,
+			"city":            req.City,
+			"district":        req.District,
+			"detail_addr":     req.DetailAddr,
+			"zip_code":        req.ZipCode,
+			"coupon_id":       req.CouponID,
+			"buyer_remark":    req.BuyerRemark,
+			"source":          req.Source,
+			"created_at":      now,
 		})
 		if err != nil {
 			return err
 		}
 
 		// 创建子订单
-		subOrderNo := generateSubOrderNo()
-		subOrderId, err := tx.Model("tx_sub_orders").InsertAndGetId(g.Map{
+		subOrderId, err := insertSubOrder(ctx, sh, g.Map{
 			"sub_order_no":    subOrderNo,
 			"parent_order_id": orderId,
 			"parent_order_no": orderNo,
@@ -170,9 +181,9 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			"total_amount":    totalAmount,
 			"discount_amount": 0,
 			"pay_amount":      payAmount,
-			"shipping_fee":  0,
-			"status":        "pending",
-			"created_at":    gtime.Now(),
+			"shipping_fee":    0,
+			"status":          "pending",
+			"created_at":      now,
 		})
 		if err != nil {
 			return err
@@ -180,23 +191,23 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 
 		// 写入订单项
 		for _, item := range items {
-			_, err = tx.Model("tx_order_items").Insert(g.Map{
-				"sub_order_id": subOrderId,
-				"order_id":     orderId,
-				"order_no":     orderNo,
-				"sub_order_no": subOrderNo,
-				"merchant_id":  0,
-				"sku_id":       item.SkuId,
-				"product_id":   item.ProductId,
-				"sku_code":     item.SkuCode,
-				"product_name": item.ProductName,
-				"sku_spec":     item.SkuSpec,
-				"image":        item.Image,
-				"price":        item.Price,
-				"quantity":     item.Quantity,
-				"subtotal":     item.Subtotal,
+			err = insertOrderItem(ctx, sh, g.Map{
+				"sub_order_id":  subOrderId,
+				"order_id":      orderId,
+				"order_no":      orderNo,
+				"sub_order_no":  subOrderNo,
+				"merchant_id":   0,
+				"sku_id":        item.SkuId,
+				"product_id":    item.ProductId,
+				"sku_code":      item.SkuCode,
+				"product_name":  item.ProductName,
+				"sku_spec":      item.SkuSpec,
+				"image":         item.Image,
+				"price":         item.Price,
+				"quantity":      item.Quantity,
+				"subtotal":      item.Subtotal,
 				"refund_status": "none",
-				"created_at":   gtime.Now(),
+				"created_at":    now,
 			})
 			if err != nil {
 				return err
@@ -204,7 +215,7 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		}
 
 		// 创建订单日志
-		_, err = tx.Model("tx_order_logs").Insert(g.Map{
+		err = insertOrderLog(ctx, sh, g.Map{
 			"order_id":      orderId,
 			"order_no":      orderNo,
 			"from_status":   "",
@@ -212,14 +223,14 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 			"operator":      "system",
 			"operator_type": "system",
 			"note":          "订单创建",
-			"created_at":    gtime.Now(),
+			"created_at":    now,
 		})
 		if err != nil {
 			return err
 		}
 
-		// 重新读取完整订单
-		err = tx.Model("tx_orders").Where("id", orderId).Scan(&order)
+		// 重新读取完整订单（分片已知，无需二次推导）
+		order, err = findOrderByIDIn(ctx, sh, orderId)
 		return err
 	})
 	if err != nil {
@@ -241,21 +252,14 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 		size = 100
 	}
 
-	m := dao.Orders.Ctx(ctx)
-	if req.UserID > 0 {
-		m = m.Where(dao.Orders.Columns().UserId, req.UserID)
-	}
-	if req.Status != "" {
-		m = m.Where(dao.Orders.Columns().Status, req.Status)
-	}
-	if req.PaymentStatus != "" {
-		m = m.Where(dao.Orders.Columns().PaymentStatus, req.PaymentStatus)
-	}
-	if req.OrderNo != "" {
-		m = m.Where(dao.Orders.Columns().OrderNo, req.OrderNo)
+	filter := orderListFilter{
+		UserID:        req.UserID,
+		Status:        req.Status,
+		PaymentStatus: req.PaymentStatus,
+		OrderNo:       req.OrderNo,
 	}
 
-	total, err := m.Count()
+	total, err := countOrdersByFilter(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +270,7 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 		}, nil
 	}
 
-	var list []*entity.Orders
-	err = m.Page(page, size).OrderDesc(dao.Orders.Columns().Id).Scan(&list)
+	list, err := pageOrders(ctx, filter, page, size)
 	if err != nil {
 		return nil, err
 	}
@@ -278,8 +281,8 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 }
 
 func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.OrdersDetailRes, err error) {
-	var order *entity.Orders
-	err = dao.Orders.Ctx(ctx).Where(dao.Orders.Columns().OrderNo, req.OrderNo).Scan(&order)
+	// 由单号定位分片，子表查询复用同一个分片
+	order, sh, err := findOrderWithShardByOrderNo(ctx, req.OrderNo)
 	if err != nil {
 		return nil, err
 	}
@@ -287,8 +290,7 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 		return nil, errcode.ErrOrderNotFound
 	}
 
-	var subOrders []*entity.SubOrders
-	err = dao.SubOrders.Ctx(ctx).Where(dao.SubOrders.Columns().ParentOrderId, order.Id).Scan(&subOrders)
+	subOrders, err := listSubOrdersByParentOrderID(ctx, sh, order.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -296,8 +298,7 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 		subOrders = make([]*entity.SubOrders, 0)
 	}
 
-	var items []*entity.OrderItems
-	err = dao.OrderItems.Ctx(ctx).Where(dao.OrderItems.Columns().OrderId, order.Id).Scan(&items)
+	items, err := listItemsByOrderID(ctx, sh, order.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -336,9 +337,8 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 }
 
 func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusReq) (res *v1.OrdersUpdateStatusRes, err error) {
-	// 查询订单
-	var order *entity.Orders
-	err = dao.Orders.Ctx(ctx).Where(dao.Orders.Columns().OrderNo, req.OrderNo).Scan(&order)
+	// 查询订单（同时拿到分片，后续子表与更新都在同一分片内）
+	order, sh, err := findOrderWithShardByOrderNo(ctx, req.OrderNo)
 	if err != nil {
 		return nil, err
 	}
@@ -363,28 +363,29 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 	}
 
 	// 在事务中更新状态
-	err = dao.Orders.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = withOrdersTx(ctx, func(ctx context.Context, tx gdb.TX) error {
+		now := gtime.Now()
 		updateData := g.Map{
 			"status":     req.Status,
-			"updated_at": gtime.Now(),
+			"updated_at": now,
 		}
 
 		// 根据目标状态设置对应的时间戳
 		switch req.Status {
 		case "paid":
 			updateData["payment_status"] = "paid"
-			updateData["paid_at"] = gtime.Now()
+			updateData["paid_at"] = now
 		case "cancelled":
-			updateData["closed_at"] = gtime.Now()
+			updateData["closed_at"] = now
 			updateData["payment_status"] = "refunded"
 		case "shipped":
-			updateData["shipped_at"] = gtime.Now()
+			updateData["shipped_at"] = now
 		case "delivered":
-			updateData["delivered_at"] = gtime.Now()
+			updateData["delivered_at"] = now
 		case "completed":
-			updateData["completed_at"] = gtime.Now()
+			updateData["completed_at"] = now
 		}
-		_, err = tx.Model("tx_orders").Where("id", order.Id).Data(updateData).Update()
+		err := updateOrderByID(ctx, sh, order.Id, updateData)
 		if err != nil {
 			return err
 		}
@@ -392,27 +393,27 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		// 同步更新子订单状态
 		subUpdateData := g.Map{
 			"status":     req.Status,
-			"updated_at": gtime.Now(),
+			"updated_at": now,
 		}
 		switch req.Status {
 		case "paid":
-			subUpdateData["paid_at"] = gtime.Now()
+			subUpdateData["paid_at"] = now
 		case "cancelled":
-			subUpdateData["closed_at"] = gtime.Now()
+			subUpdateData["closed_at"] = now
 		case "shipped":
-			subUpdateData["shipped_at"] = gtime.Now()
+			subUpdateData["shipped_at"] = now
 		case "delivered":
-			subUpdateData["delivered_at"] = gtime.Now()
+			subUpdateData["delivered_at"] = now
 		case "completed":
-			subUpdateData["completed_at"] = gtime.Now()
+			subUpdateData["completed_at"] = now
 		}
-		_, err = tx.Model("tx_sub_orders").Where("parent_order_id", order.Id).Data(subUpdateData).Update()
+		err = updateSubOrdersByParentOrderID(ctx, sh, order.Id, subUpdateData)
 		if err != nil {
 			return err
 		}
 
 		// 创建订单日志
-		_, err = tx.Model("tx_order_logs").Insert(g.Map{
+		return insertOrderLog(ctx, sh, g.Map{
 			"order_id":      order.Id,
 			"order_no":      order.OrderNo,
 			"from_status":   order.Status,
@@ -420,19 +421,90 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 			"operator":      "system",
 			"operator_type": "system",
 			"note":          req.Note,
-			"created_at":    gtime.Now(),
+			"created_at":    now,
 		})
-		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// 重新读取更新后的订单
-	var updatedOrder *entity.Orders
-	err = dao.Orders.Ctx(ctx).Where(dao.Orders.Columns().OrderNo, req.OrderNo).Scan(&updatedOrder)
+	// 重新读取更新后的订单（分片已知）
+	updatedOrder, err := findOrderByOrderNo(ctx, req.OrderNo)
 	if err != nil {
 		return nil, err
 	}
 	return &v1.OrdersUpdateStatusRes{Orders: updatedOrder}, nil
+}
+
+// ── 跨模块能力（供 payments / dashboard 使用） ─────────────────────────────
+//
+// 这些方法是订单表对其他模块**唯一**的访问入口：payments 不再直接 dao.Orders / tx_orders，
+// dashboard 不再直接聚合订单表。分表落地时，跨片逻辑只在这一个模块里改。
+
+// GetByOrderNo 按业务单号查询订单；不存在时返回 (nil, nil)。
+func (s *sOrders) GetByOrderNo(ctx context.Context, orderNo string) (*entity.Orders, error) {
+	return findOrderByOrderNo(ctx, orderNo)
+}
+
+// MarkPaidByOrderNo 支付成功后回写主订单与子订单状态（按业务单号，覆盖该单号下全部子订单）。
+// 由调用方在事务中调用时，会自动加入该事务（GoFrame 从事务 ctx 中取 tx）。
+func (s *sOrders) MarkPaidByOrderNo(ctx context.Context, orderNo string) error {
+	return markOrderPaidByOrderNo(ctx, orderNo)
+}
+
+// StatsSummary 订单总数与已支付金额合计。
+func (s *sOrders) StatsSummary(ctx context.Context) (service.OrderStatsSummary, error) {
+	var out service.OrderStatsSummary
+
+	total, err := countAllOrders(ctx)
+	if err != nil {
+		return out, fmt.Errorf("count orders: %w", err)
+	}
+	out.TotalOrders = total
+
+	revenue, err := sumPaidAmount(ctx)
+	if err != nil {
+		return out, fmt.Errorf("sum revenue: %w", err)
+	}
+	out.TotalRevenue = revenue
+	return out, nil
+}
+
+// DailyTrend 统计 since（含）之后的按日订单数与金额，date 形如 08-20。
+func (s *sOrders) DailyTrend(ctx context.Context, since string) ([]service.OrderDayTrend, error) {
+	rows, err := dailyOrderTrend(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.OrderDayTrend, len(rows))
+	for i, r := range rows {
+		out[i] = service.OrderDayTrend{Date: r.Date, Count: r.Count, Amount: r.Amount}
+	}
+	return out, nil
+}
+
+// StatusDistribution 按状态统计订单数。
+func (s *sOrders) StatusDistribution(ctx context.Context) ([]service.OrderStatusCount, error) {
+	rows, err := orderStatusDistribution(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.OrderStatusCount, len(rows))
+	for i, r := range rows {
+		out[i] = service.OrderStatusCount{Status: r.Status, Value: r.Value}
+	}
+	return out, nil
+}
+
+// TopProducts 按订单明细聚合商品销量与金额 TOP N。
+func (s *sOrders) TopProducts(ctx context.Context, limit int) ([]service.OrderProductRank, error) {
+	rows, err := topProductsByOrderItems(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.OrderProductRank, len(rows))
+	for i, r := range rows {
+		out[i] = service.OrderProductRank{ProductId: r.ProductId, Count: r.Count, Amount: r.Amount}
+	}
+	return out, nil
 }

@@ -184,6 +184,7 @@ roles/permissions 等共 40+）见 `internal/logic/`，目前未接入 ES。
 | [`docs/curd-workflow.md`](docs/curd-workflow.md) | 新增 CRUD 模块的完整流程 |
 | [`docs/cache-optimization-guide.md`](docs/cache-optimization-guide.md) | 缓存优化历程（ZSET+Lua+singleflight、P99 目标） |
 | [`docs/elasticsearch-search-guide.md`](docs/elasticsearch-search-guide.md) | ES 接入方案、products 接入实录、行为变化与坑位 |
+| [`docs/order-sharding-design.md`](docs/order-sharding-design.md) | 订单分表设计（决策文档：方案对比、`order_no` 路由、迁移步骤与回滚） |
 | [`docs/roadmap.md`](docs/roadmap.md) | 待办事项与优先级 |
 | [`docs/perf-workflow.md`](docs/perf-workflow.md) | 压测流程 |
 | [`docs/email-verify-code-guide.md`](docs/email-verify-code-guide.md) | 验证码底座：渠道分层、配置、接口、风控与安全设计、到达率 |

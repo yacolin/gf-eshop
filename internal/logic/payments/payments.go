@@ -33,9 +33,8 @@ func generateRefundNo() string {
 func (s *sPayments) CreatePayment(ctx context.Context, req *v1.PaymentsCreateReq) (res *v1.PaymentsCreateRes, err error) {
 	paymentNo := generatePaymentNo()
 
-	// 查询订单是否存在
-	var order *entity.Orders
-	err = dao.Orders.Ctx(ctx).Where(dao.Orders.Columns().OrderNo, req.OrderNo).Scan(&order)
+	// 查询订单是否存在（订单表只能经 service.Orders() 访问，见 docs/order-sharding-design.md）
+	order, err := service.Orders().GetByOrderNo(ctx, req.OrderNo)
 	if err != nil {
 		return nil, err
 	}
@@ -139,23 +138,9 @@ func (s *sPayments) HandleCallback(ctx context.Context, req *v1.PaymentsCallback
 		}
 
 		// 支付成功，更新关联订单的支付状态和状态
+		// （orders + sub_orders 都在订单域内的一个出口里完成，且复用本事务的 ctx）
 		if req.Status == "success" {
-			_, err = tx.Model("tx_orders").Where("order_no", payment.OrderNo).Data(g.Map{
-				"payment_status": "paid",
-				"status":         "paid",
-				"paid_at":        gtime.Now(),
-				"updated_at":     gtime.Now(),
-			}).Update()
-			if err != nil {
-				return err
-			}
-			// 同步更新子订单
-			_, err = tx.Model("tx_sub_orders").Where("parent_order_no", payment.OrderNo).Data(g.Map{
-				"status":     "paid",
-				"paid_at":    gtime.Now(),
-				"updated_at": gtime.Now(),
-			}).Update()
-			if err != nil {
+			if err = service.Orders().MarkPaidByOrderNo(ctx, payment.OrderNo); err != nil {
 				return err
 			}
 		}

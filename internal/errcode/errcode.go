@@ -86,6 +86,9 @@ const (
 	CodeNotificationTemplateNotFound = 9002
 	CodeInvalidOrderStatus           = 7002
 	CodeOrderItemNotFound   = 7003
+	// CodeOrderShardNotReady 订单分表已开启，但该查询所需的跨片能力还没实现。
+	// 宁可明确报错，也不要静默回落主表读到过期数据。见 docs/order-sharding-design.md §7。
+	CodeOrderShardNotReady = 7004
 
 	CodeMerchantsNotFound           = 10001
 	CodeMerchantBankAccountNotFound  = 10002
