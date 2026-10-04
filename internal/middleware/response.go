@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -68,12 +69,23 @@ func ErrorHandler(r *ghttp.Request) {
 	}
 
 	httpStatus := mapErrorToHTTPStatus(cd)
-	r.Response.WriteStatus(httpStatus, &APIResponse{
+	body := &APIResponse{
 		Code:    cd,
 		Message: msg,
 		Data:    res,
 		TraceID: traceID,
-	})
+	}
+
+	// 时间字段统一带毫秒（GoFrame 的 gtime 序列化写死了秒级，见 time_millis.go）。
+	// 只有**真的含时间字段**时才走自编码；否则保持原路径，输出逐字节不变。
+	if data, changed, err := marshalWithMillis(body); err != nil {
+		g.Log().Warningf(r.Context(), "时间字段毫秒化失败，回退标准路径: %v", err)
+	} else if changed {
+		r.Response.WriteHeader(httpStatus)
+		r.Response.WriteJson(json.RawMessage(data))
+		return
+	}
+	r.Response.WriteStatus(httpStatus, body)
 }
 
 var errorStatusMap = map[int]int{

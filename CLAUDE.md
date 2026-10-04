@@ -170,6 +170,12 @@ roles/permissions 等共 40+）见 `internal/logic/`，目前未接入 ES。
 - **错误处理**：记录不存在用 `gerror.NewCode(gcode.CodeNotFound, ...)`，参数非法用 `gcode.CodeInvalidParameter`
 - **空结果**：返回 `make([]*T, 0)` 而非 `nil`，避免 JSON 序列化为 `null`
 - **JSON 字段**：全部使用 snake_case（在 `hack/config.yaml` 中配置）
+- **时间字段**：统一为 **`YYYY-MM-DD HH:mm:ss.SSS`（毫秒精度）** 字符串，未设置为 `null`，
+  时区是服务器本地时区（CST）。GoFrame 的 `gtime.Time` 默认序列化是**秒级**
+  （`gtime_time_wrapper.go` 里 `wrapper.String()` 写死了格式，且 `gf gen dao`
+  不支持自定义 entity 模板），所以由响应中间件统一格式化：
+  `internal/middleware/time_millis.go`。它只重写含 `gtime` 的子树，
+  其余一律交回 `encoding/json`，因此**不含时间的响应逐字节不变**。
 - **分页有两套，不要混用**：
   - brands / categories：`page` + `page_size`（offset，默认 page=1、pageSize=20）
   - products：`cursor` + `size`（keyset；`cursor` = base64(id)，排序固定 `id DESC`）
