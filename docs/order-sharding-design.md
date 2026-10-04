@@ -514,19 +514,75 @@ CREATE TABLE tx_order_daily_stats (
 > （`g.DB().Exec/GetValue`）。等看板读路径切到汇总表时，把这两张表加进
 > `hack/config.yaml` 的 `tables` 并跑 `gf gen dao`，换成 DAO 访问。
 
-### Phase 3：开双写 + 影子读对账
+### Phase 3：开双写 + 影子读对账 ✅ 已完成
 
 - 动作：写入同时写主表与分片；读仍走主表。
   影子读：抽样请求同时读两边，比对结果并打点差异率。
-- 竞态说明：Phase 2 迁移期间对**历史月份**的零星更新（发货、退款）不会进分片 ——
-  由「迁移完成后按 `updated_at > 迁移开始时刻` 对该月重放一次（`REPLACE INTO`）」补齐。
-  这个窗口很小，且被限定在历史月份。
-- 验证：差异率连续 N 天为 0；双写失败只记日志不阻塞主链路（与 ES 双写同策略）。
 - 回滚：关双写，主表仍是完整真相源。
+
+**实现取舍（与最初设想的差异，都有理由）**
+
+1. **双写不逐条改写入语句，而是「按订单整单镜像」**。
+   最初的想法是「每条 insert/update 都写两遍」，但那要改 8 个写函数
+   （4 张表 × insert/update），任何一条漏改都会让分片永久缺数，且以后每加一个写接口
+   都要记得改。现在改成在**同一个事务内**按订单把 4 张表的当前行从主表复制到分片：
+
+   ```sql
+   INSERT INTO <分片> SELECT * FROM <主表> WHERE <订单键> = ?
+   ON DUPLICATE KEY UPDATE <全列覆盖>
+   ```
+
+   好处：① 只挂在 3 个编排点（建单 / 改状态 / 支付回写），不会漏；
+   ② 同事务 ⇒ 与主写**原子**（`gdb` 的 `Exec` 会取 ctx 里的事务，见 `Core.DoExec`）；
+   ③ 全列覆盖 ⇒ 幂等且**自愈**：上一次漏掉的更新会在下一次写入时被带上。
+
+2. **取键按「有索引」选，而不是一律用 `order_no`**：`tx_order_logs` **没有 `order_no` 索引**
+   （只有 `idx_order_id`），所以日志表按 `order_id` 定位，避免大表全扫。
+   因此 `MarkPaidByOrderNo` 增加了 `orderID` 入参。
+
+3. **迁移缺口用「重跑 migrate」重放，不需要单独的 replay 命令**：
+   把迁移的 `ON DUPLICATE KEY UPDATE` 从空更新（`id = VALUES(id)`）改成**全列覆盖**后，
+   重跑 `--action=migrate` 就不只是「不重复」，而是把主表当前内容重新同步到分片 ——
+   正好覆盖设计里说的「迁移期间落在历史月份的零星更新」。实测：直接改主表不写分片
+   （复现缺口）→ 重跑 migrate → 分片追平，且不产生重复行。
+
+**开关（都在 `orderShard` 段，缺省即关闭 = 现状）**
+
+| 配置 | 缺省 | 作用 |
+|------|------|------|
+| `orderShard.mode` | `single` | `single` 读写主表；`monthly` 读写分片（Phase 4） |
+| `orderShard.dualWrite` | `false` | 写主表的同时把同一订单镜像进分片 |
+| `orderShard.shadowReadPercent` | `0` | 影子读抽样比例（0~100），抽样比对主表与分片 |
+
+影子读抽样是**确定性**的（`crc32(order_no) % 100`），同一条订单每次都会命中同一样本，
+便于复现；且它只记日志与计数，绝不改变接口返回值。
+
+**可观测性**（Redis 计数，直接看差异率）：
+
+```bash
+redis-cli MGET order:shard:shadow:total order:shard:shadow:diff order:shard:shadow:error
+redis-cli MGET order:shard:mirror:mirror_ok order:shard:mirror:mirror_failed
+```
+
+**实测**（`dualWrite=true` + `shadowReadPercent=100`，当月分片 202610）
+
+- 建单：主表与分片的订单/子订单/明细/日志四张表都落到 202610，逐列一致；
+- 状态流转 paid→shipped→delivered→completed：每一步主表与分片的订单与子订单状态都一致，
+  日志条数一致（1 + 4）；
+- 支付回写（跨模块路径）：回调后主表与分片的 `status/payment_status/paid_at` 一致；
+- 影子读：计数 `total=11`、`diff=0`、`error=0`；双写 `mirror_ok≥2`、`mirror_failed=0`；
+- **反向验证**：把分片行改坏（`status`/`pay_amount`）后读同一订单 → 差异计数 +1、
+  日志打出两侧指纹、**接口仍返回主表的正确值**（证明影子读不会影响结果，且这套对账不是摆设）；
+- **重放验证**：被改坏的分片行重跑 migrate 后追平；只改主表复现缺口后重跑 migrate 同样追平；
+- **默认关闭回归**：与 Phase 3 之前的 HEAD 逐字段对比 14 项零差异；`tests/test_tx_api.py` 36/36。
+
+> Phase 4 才会把读路径切到分片（`mode=monthly`），届时列表/看板聚合需要跨片 fan-out 或
+> 日汇总表，目前 `shardForScan` 在 monthly 下仍是明确报错而不是静默读主表。
 
 ### Phase 4：灰度切读
 
-- 动作：`order_shard.enabled = true` 按流量比例（如 1% → 10% → 50% → 100%）放量。
+- 动作：`orderShard.mode: monthly` 按流量比例放量（当前是单开关；要灰度还得再加
+  `orderShard.readShardsPercent` 之类的读侧比例，Phase 4 落地时补）。
 - 验证：核心接口 P99、错误率、`order_shard_fallback_total`、跨片查询耗时。
 - 回滚：**单开关回落主表**，秒级生效。
 
@@ -551,7 +607,7 @@ CREATE TABLE tx_order_daily_stats (
 | Phase 1 | 切回旧生成器 | 无 | 分钟级 |
 | Phase 2 | 删除分片表 | 无（主表未动） | 分钟级 |
 | Phase 3 | 关双写开关 | 无（主表是真相源） | 秒级 |
-| Phase 4 | `order_shard.enabled=false` | 无 | **秒级** |
+| Phase 4 | `orderShard.mode` 改回 `single` | 无 | **秒级** |
 | Phase 5 | 重启双写 | 停写期间新单只在分片，需手工回灌 | 小时级 |
 | Phase 6 | `RENAME` 回旧名 | 无（30 天窗口内） | 分钟级 |
 

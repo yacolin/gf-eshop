@@ -45,6 +45,8 @@
 | **Phase 2 状态** | ✅ **已完成**（`b4a3fe1` `ccd5be7`）。新增 `main shard --action=create\|migrate\|verify` 三个命令；建成 2026-08/09 共 8 张分片表，迁入 2000 单 + 5025 明细 + 2000 条老主键映射 + 32 天日汇总；**对账 8 项（行数 + 全字段 CRC32 校验和 + 金额）全部通过，重跑 migrate 新增 0 行**；日汇总与主表直查逐项一致。`tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT` 已去掉 |
 | **Phase 2 的 DDL 归属** | DDL 一律改在 **schema 源仓库 `std-eshop-db`**（本仓库不放 DDL，避免两个来源）：基线 `sql/tx_p0.sql`/`tx_p1.sql`/`tx_p5.sql`，存量库迁移 `sql/migrations/V001__tx_order_sharding.sql`。已过该仓库的 `sql_lint.py` 与 `schema_diff.py`，并用两个临时库验证「全新基线」与「基线 + V001」**终态 schema 逐字节一致**；`pgsql/` 侧**尚未镜像**，已登记为待补 |
 | **Phase 2 的意外收获** | `decodeOrderID` 原先对任何正整数都能解出时间，**老自增主键 1..2000 会被解成 2024-01-01** 并路由到不存在的分片 → 已加 `legacyOrderIDMax` 阈值，老主键改走 `tx_order_shard_map`；`ShardOfOrderID` 是统一入口，无法定位时明确报错 |
+| **Phase 3 状态** | ✅ **已完成**。双写（`orderShard.dualWrite`）+ 影子读对账（`orderShard.shadowReadPercent`），缺省全关 = 现状。**实测**：建单/状态流转/支付回写三条路径主表与分片逐列一致；影子读 `total=11 diff=0 error=0`；**反向验证**把分片改坏后差异计数 +1、接口仍返回主表值；**重放验证**只改主表复现缺口后重跑 migrate 即追平且无重复行；默认关闭下与 Phase 3 前 HEAD 对比 14 项零差异、套件 36/36 |
+| **Phase 3 的实现取舍** | 双写没有逐条改 8 个写函数，而是**在事务内按订单整单镜像**（`INSERT ... SELECT ... ON DUPLICATE KEY UPDATE 全列`）——只挂 3 个编排点、与主写原子、且全列覆盖让它**自愈**（漏掉的更新下次写入自动补上）。迁移也因此获得重放能力（重跑 `--action=migrate` 即重新同步），不需要单独的 replay 命令。`tx_order_logs` 没有 `order_no` 索引，故日志按 `order_id` 定位 |
 | **Phase 0 修正了文档一处错误** | GoFrame 的 `Insert` 会**无条件覆盖** `created_at`（`gdb_model_insert.go:311-321`），实测同一次建单四表相差 2~4 ms → 设计文档「三者必然同月」在月份级成立、毫秒级**不成立**，Phase 2 必须按文档 §5.3 的方案 A（`.Unscoped()`）处理跨月窗口 |
 | **顺带发现（前置必修）** | `generateOrderNo()` 后 4 位是 `rand(10000)`，@10 万单/日 **日均碰撞期望 5.8 次**、峰值秒内 86% —— 撞 `uk_order_no` 会让用户下单直接失败。修法（每秒序列）与路由天然统一 |
 | **改造面** | 业务代码只有 3 个文件（`logic/orders`、`logic/payments`、`logic/dashboard`）共 35 处引用，比看上去小 |
@@ -136,6 +138,7 @@
 | 修复订单接口测试（鉴权 + 可重复执行） | `6e7c1ac` | 业务接口改用用户令牌（原先用 staff 令牌必然 401）；`transaction_id` 不再硬编码；28/28 且可重复执行 |
 | 订单分表 Phase 2（建分片 + 迁移 + 对账） | `b4a3fe1` | `main shard --action=create\|migrate\|verify`；8 张分片表、2000 单 + 5025 明细迁入、32 天日汇总回填；三重对账（行数 + 全字段 CRC32 + 金额）通过且可重复执行；去掉两个 `AUTO_INCREMENT` |
 | 订单列表游标分页（keyset） | `ccd5be7` | `size` + `cursor`（base64(id)，与 products 一致）、`next_cursor`、游标模式 `total=-1`；page 模式行为不变；套件 36/36，前端适配见 §2.6 |
+| 订单分表 Phase 3（双写 + 影子读） | 见 §1.3 | 事务内按订单整单镜像（自愈、原子）；影子读确定性抽样 + Redis 计数；反向验证能抓到差异；migrate 变全列覆盖因而具备重放能力 |
 
 ---
 
