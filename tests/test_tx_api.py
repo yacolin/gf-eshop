@@ -24,10 +24,18 @@ USERNAME = "admin"
 PASSWORD = "123456"
 SKU_ID = 1       # 测试用的 SKU ID（需确保该 SKU 存在且价格 > 0）
 
+# 用户令牌：orders / payments 挂在 UserAuthMiddleware 下，**staff 令牌不认**（会返回 1004）。
+# 所以本脚本需要两个身份：staff 只用于 1.1 登录用例，业务接口一律用下面的用户令牌。
+USER_TOKEN = None
+USER_NAME = "test_tx_api"
+USER_PASSWORD = "test123456"
 
-def req(method, url, headers=None, body=None):
+
+def req(method, url, headers=None, body=None, auth=True):
     if headers is None:
         headers = {}
+    if auth and USER_TOKEN and "Authorization" not in headers:
+        headers["Authorization"] = f"Bearer {USER_TOKEN}"
     data = json.dumps(body).encode() if body else None
     if body:
         headers.setdefault("Content-Type", "application/json")
@@ -92,12 +100,32 @@ def test_login(base_url, username, password):
     return data
 
 
+def user_login(base_url):
+    """获取用户令牌并写入全局 USER_TOKEN。
+
+    orders / payments 走 UserAuthMiddleware，staff 令牌会被判 1004，
+    所以业务接口必须用用户身份。注册成功则直接用，已存在则登录。
+    """
+    global USER_TOKEN
+    r = req("POST", f"{base_url}/api/v1/user/auth/register",
+            body={"username": USER_NAME, "password": USER_PASSWORD}, auth=False)
+    if r.get("code") != 0:
+        r = req("POST", f"{base_url}/api/v1/user/auth/login",
+                body={"username": USER_NAME, "password": USER_PASSWORD}, auth=False)
+    if r.get("code") != 0:
+        print(f"  ✗ 1.2 获取用户令牌失败: {r.get('message', r)}")
+        sys.exit(1)
+
+    USER_TOKEN = r["data"]["access_token"]
+    check(True, f"1.2 获取用户令牌（user_id={r['data']['user_id']}, username={r['data']['username']}）")
+
+
 def test_create_order(base_url, sku_id):
     print(f"\n{'='*60}")
     print(f"2. 创建订单测试（CreateOrder）")
     print(f"{'='*60}")
 
-    # 2.1 正常创建订单（该接口无需认证）
+    # 2.1 正常创建订单（需用户令牌，见 user_login）
     r = req("POST", f"{base_url}/api/v1/orders", body={
         "user_id": 1,
         "items": [{"sku_id": sku_id, "quantity": 2}],
@@ -254,29 +282,23 @@ def test_create_payment(base_url, order_no):
         print("  跳过：无可用订单号")
         return None
 
-    # 6.1 正常创建支付（需认证）
-    # 先拿一下 token
-    login_data = test_login(base_url, USERNAME, PASSWORD)
-    token = login_data["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
+    # 6.1 正常创建支付（需用户令牌，req 会自动附加）
     # 先查询订单金额
     r = req("GET", f"{base_url}/api/v1/orders/{order_no}")
     if r.get("code") != 0:
         print("  无法获取订单金额，跳过支付测试")
-        return None, token
+        return None
     pay_amount = r["data"]["order"]["pay_amount"]
 
-    r = req("POST", f"{base_url}/api/v1/payments",
-            headers=headers, body={
-                "order_no": order_no,
-                "amount": pay_amount,
-                "payment_method": "wechat",
-                "channel": "wechat_native",
-            })
+    r = req("POST", f"{base_url}/api/v1/payments", body={
+        "order_no": order_no,
+        "amount": pay_amount,
+        "payment_method": "wechat",
+        "channel": "wechat_native",
+    })
     ok(r, "6.1 创建支付")
     if r.get("code") != 0:
-        return None, token
+        return None
     payment = r["data"]
     payment_no = payment.get("payment_no", "")
     print(f"    支付单号: {payment_no}")
@@ -284,7 +306,7 @@ def test_create_payment(base_url, order_no):
     print(f"    支付方式: {payment.get('payment_method')}")
     print(f"    状态: {payment.get('status')}")
 
-    return payment_no, token
+    return payment_no
 
 
 def test_payment_callback(base_url, payment_no):
@@ -297,9 +319,11 @@ def test_payment_callback(base_url, payment_no):
         return
 
     # 7.1 支付成功回调（无需认证）
+    # transaction_id 有唯一约束，用支付单号派生以保证脚本可重复执行
+    tx_id = f"WX{payment_no}"
     r = req("POST", f"{base_url}/api/v1/payments/callback", body={
         "payment_no": payment_no,
-        "transaction_id": "WX2026120112345678",
+        "transaction_id": tx_id,
         "channel": "wechat_native",
         "status": "success",
         "raw_body": '{"result_code":"SUCCESS","openid":"oXXXX"}',
@@ -315,7 +339,7 @@ def test_payment_callback(base_url, payment_no):
     # 7.2 支付失败回调
     r = req("POST", f"{base_url}/api/v1/payments/callback", body={
         "payment_no": payment_no,
-        "transaction_id": "WX2026120112345679",
+        "transaction_id": f"{tx_id}-F",
         "channel": "wechat_native",
         "status": "failed",
         "failure_reason": "余额不足",
@@ -375,18 +399,12 @@ def test_create_refund(base_url, payment_no):
         print("  跳过：无可用支付单号")
         return
 
-    # 先获取 token
-    login_data = test_login(base_url, USERNAME, PASSWORD)
-    token = login_data["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # 9.1 正常创建退款
-    r = req("POST", f"{base_url}/api/v1/payments/refunds",
-            headers=headers, body={
-                "payment_no": payment_no,
-                "amount": 1,  # 退款1分
-                "reason": "测试退款",
-            })
+    # 9.1 正常创建退款（需用户令牌，req 会自动附加）
+    r = req("POST", f"{base_url}/api/v1/payments/refunds", body={
+        "payment_no": payment_no,
+        "amount": 1,  # 退款1分
+        "reason": "测试退款",
+    })
     ok(r, "9.1 创建退款")
     if r.get("code") == 0:
         refund = r["data"]
@@ -395,15 +413,14 @@ def test_create_refund(base_url, payment_no):
         print(f"    状态: {refund.get('status')}")
 
     # 9.2 不存在的支付单号
-    r = req("POST", f"{base_url}/api/v1/payments/refunds",
-            headers=headers, body={
-                "payment_no": "PAY_NOT_EXIST",
-                "amount": 100,
-            })
+    r = req("POST", f"{base_url}/api/v1/payments/refunds", body={
+        "payment_no": "PAY_NOT_EXIST",
+        "amount": 100,
+    })
     check(r.get("code") != 0, "9.2 不存在的支付单号返回错误")
 
-    # 9.3 无认证
-    r = req("POST", f"{base_url}/api/v1/payments/refunds", body={
+    # 9.3 无认证（显式不带令牌）
+    r = req("POST", f"{base_url}/api/v1/payments/refunds", auth=False, body={
         "payment_no": payment_no,
         "amount": 100,
     })
@@ -421,9 +438,9 @@ def main():
     print(f"✅ 测试服务: {args.url}")
     print(f"✅ 测试SKU: {args.sku_id}")
 
-    # 1. 登录
-    login_data = test_login(args.url, args.username, args.password)
-    token = login_data["access_token"]
+    # 1. 登录：staff 只验证登录本身，业务接口需要用户令牌
+    test_login(args.url, args.username, args.password)
+    user_login(args.url)
 
     # 2. 创建订单（获取订单号）
     order_no = test_create_order(args.url, args.sku_id)
@@ -440,7 +457,7 @@ def main():
         order_no2 = test_create_order(args.url, args.sku_id)
         if order_no2:
             # 6. 创建支付
-            payment_no, _ = test_create_payment(args.url, order_no2)
+            payment_no = test_create_payment(args.url, order_no2)
 
             # 7. 支付回调
             test_payment_callback(args.url, payment_no)
