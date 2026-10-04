@@ -38,6 +38,7 @@ import (
 	brandsLogic "gf-eshop/internal/logic/brands"
 	categoriesLogic "gf-eshop/internal/logic/categories"
 	productsLogic "gf-eshop/internal/logic/products"
+	ordersLogic "gf-eshop/internal/logic/orders"
 	_ "gf-eshop/internal/logic/dashboard"
 	marketingLogic "gf-eshop/internal/logic/marketing"
 	merchantsLogic "gf-eshop/internal/logic/merchants"
@@ -236,6 +237,75 @@ var (
 		},
 	}
 )
+
+func init() {
+	if err := Main.AddCommand(&gcmd.Command{
+		Name:  "shard",
+		Usage: "shard --action=create|migrate|verify --from=2026-08 --to=2026-09 [--batch=5000]",
+		Brief: "订单分表运维：建分片 / 迁移历史 / 三重对账（见 docs/order-sharding-design.md §7）",
+		Func: func(ctx context.Context, parser *gcmd.Parser) error {
+			// 同 reindex：GoFrame 的 gcmd 会把多余的位置参数当成多级命令名，只能用选项传参
+			var (
+				action = strings.TrimSpace(parser.GetOpt("action", "").String())
+				from   = strings.TrimSpace(parser.GetOpt("from", "").String())
+				to     = strings.TrimSpace(parser.GetOpt("to", "").String())
+				batch  = parser.GetOpt("batch", 5000).Int()
+			)
+			if from == "" || to == "" {
+				return gerror.New("必须指定 --from 与 --to（形如 2026-08）")
+			}
+
+			switch action {
+			case "create":
+				tables, err := ordersLogic.CreateShards(ctx, from, to)
+				if err != nil {
+					return err
+				}
+				for _, t := range tables {
+					g.Log().Infof(ctx, "分片表就绪: %s", t)
+				}
+				g.Log().Infof(ctx, "共 %d 张分片表就绪（%s ~ %s）", len(tables), from, to)
+				return nil
+
+			case "migrate":
+				report, err := ordersLogic.MigrateShards(ctx, from, to, batch)
+				if err != nil {
+					return err
+				}
+				for _, m := range report.Months {
+					g.Log().Infof(ctx, "迁移 %s %s：新增 %d 行", m.Month, m.Table, m.Rows)
+				}
+				g.Log().Infof(ctx, "老主键映射登记 %d 行，日汇总回填 %d 行",
+					report.ShardMapRows, report.StatsRows)
+				return nil
+
+			case "verify":
+				report, err := ordersLogic.VerifyShards(ctx, from, to)
+				if err != nil {
+					return err
+				}
+				for _, c := range report.Checks {
+					if c.Pass {
+						g.Log().Infof(ctx, "✓ %s %s：行数 %d，校验和 %d，金额 %s",
+							c.Month, c.Table, c.RowsA, c.HashA, c.SumA)
+						continue
+					}
+					g.Log().Errorf(ctx, "✗ %s %s：%s", c.Month, c.Table, c.Detail)
+				}
+				if !report.AllPass {
+					return gerror.Newf("对账失败 %d 项", report.Failed)
+				}
+				g.Log().Infof(ctx, "对账全部通过（%d 项）", len(report.Checks))
+				return nil
+
+			default:
+				return gerror.Newf("未知 --action=%q，可选：create、migrate、verify", action)
+			}
+		},
+	}); err != nil {
+		panic(err)
+	}
+}
 
 // reindexTargets 已接入 ES 的业务实体 → 全量重建函数。
 // 后续 products / skus 接入时在此登记，即可自动获得 `main reindex <entity>` 能力。

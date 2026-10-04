@@ -264,4 +264,11 @@ func TestDecodeOrderIDRoundTrip(t *testing.T) {
 	if _, ok := decodeOrderID(-1); ok {
 		t.Error("负数不是合法主键，应返回 false")
 	}
+	// 迁移前的自增主键（1..2000）不能被当成编码主键，
+	// 否则会被解成 2024-01-01 并路由到不存在的分片
+	for _, legacy := range []int64{1, 2000, legacyOrderIDMax - 1} {
+		if decoded, ok := decodeOrderID(legacy); ok {
+			t.Errorf("老自增主键 %d 不应被反解成功（得到 %v）", legacy, decoded)
+		}
+	}
 }

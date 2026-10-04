@@ -222,8 +222,13 @@ func encodeOrderID(now time.Time, seq int64) int64 {
 
 // decodeOrderID 反解主键中的时间，供「按 id 定位分片」使用（Phase 2/3）。
 // 解出的时间按本地时区返回，与 created_at / 单号内嵌时间同一口径。
+//
+// 小于 legacyOrderIDMax 的 id 一律判为「不是编码主键」并返回 false：
+// 迁移前的自增主键（如 1..2000）在数学上也能解出一串位，会被误判成
+// 2024-01-01 的单而路由到根本不存在的分片 —— 必须靠阈值区分，
+// 老数据改走 tx_order_shard_map（见 ShardOfOrderID）。
 func decodeOrderID(id int64) (time.Time, bool) {
-	if id <= 0 {
+	if id < legacyOrderIDMax {
 		return time.Time{}, false
 	}
 	seq := id & orderIDSeqMask
