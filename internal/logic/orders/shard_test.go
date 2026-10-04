@@ -107,9 +107,20 @@ func TestSingleModeRoutesToBaseTable(t *testing.T) {
 		t.Fatalf("single 模式下非法单号不应报错，实际 shard=%q err=%v", sh.suffix, err)
 	}
 
-	// 聚合 / 列表路径
-	if sh, err = shardForScan(ctx, "test"); err != nil || !sh.isZero() {
-		t.Fatalf("single 模式下跨片查询应放行，实际 shard=%q err=%v", sh.suffix, err)
+	// offset 分页（page/page_size）：single 模式下回落主表且不报错
+	if sh, err = offsetListShard(ctx); err != nil || !sh.isZero() {
+		t.Fatalf("single 模式下 offset 分页应回落主表，实际 shard=%q err=%v", sh.suffix, err)
+	}
+
+	// 未配置灰度时，点查与列表都不走分片
+	if readFromShardByKey(ctx, "ORD202608202105157688") {
+		t.Error("未配置 readShardsPercent 时点查不应走分片")
+	}
+	if readShardsForList(ctx) {
+		t.Error("未配置 readShardsPercent 时列表不应走分片")
+	}
+	if !allowShardFallback(ctx) {
+		t.Error("single 模式应允许分片读回落主表")
 	}
 }
 

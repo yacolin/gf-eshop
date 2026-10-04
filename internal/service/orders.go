@@ -28,6 +28,11 @@ type IOrders interface {
 	// orderID 供分表双写镜像 tx_order_logs 使用（该表按 order_id 定位）。
 	MarkPaidByOrderNo(ctx context.Context, orderNo string, orderID int64) error
 
+	// EnsureShardsForOrderNo 确保该订单涉及的分片表存在（幂等）。
+	// **必须在事务外调用**：内部是 DDL，会隐式提交；跨模块在写事务前先调它，
+	// 才能保证事务内的双写镜像不会因为「分片表还没建」而失败。
+	EnsureShardsForOrderNo(ctx context.Context, orderNo string) error
+
 	// StatsSummary 订单总数与已支付金额合计。
 	StatsSummary(ctx context.Context) (OrderStatsSummary, error)
 

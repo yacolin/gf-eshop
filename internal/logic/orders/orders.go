@@ -61,6 +61,13 @@ func (s *sOrders) Create(ctx context.Context, req *v1.OrdersCreateReq) (res *v1.
 		if err != nil {
 			return nil, err
 		}
+		// 分片表按月动态创建：写入前确保「主写目标 + 双写镜像目标」都存在，
+		// 这样双写不会因为「当月分片还没建」而静默失败。
+		// ⚠️ 必须在事务外做——DDL 会隐式提交，放进写事务里会破坏原子性。
+		if err = EnsureShardsForWrite(ctx,
+			shardFromCreatedAt(ctx, now), mirrorShardOfCreatedAt(ctx, now)); err != nil {
+			return nil, err
+		}
 		order, err = s.createOnce(ctx, req, now, idn, userID)
 		if err == nil {
 			return &v1.OrdersCreateRes{Orders: order}, nil
@@ -424,13 +431,24 @@ func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.
 }
 
 func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusReq) (res *v1.OrdersUpdateStatusRes, err error) {
-	// 查询订单（同时拿到分片，后续子表与更新都在同一分片内）
-	order, sh, err := findOrderWithShardByOrderNo(ctx, req.OrderNo)
+	// 查询订单。第一个返回值之外的分片是**读源**（灰度期间可能是主表），
+	// 写目标另有 shardFromOrderNo 由 mode 决定 —— 两者混用会在灰度期间写错地方。
+	order, _, err := findOrderWithShardByOrderNo(ctx, req.OrderNo)
 	if err != nil {
 		return nil, err
 	}
 	if order == nil {
 		return nil, errcode.ErrOrderNotFound
+	}
+	// 写目标：主写分片（monthly 才非零）与双写镜像分片
+	wsh, err := shardFromOrderNo(ctx, req.OrderNo)
+	if err != nil {
+		return nil, err
+	}
+	msh := mirrorShardOfOrderNo(ctx, req.OrderNo)
+	// 分片表按月动态创建，写前确保存在（DDL 必须在事务外）
+	if err = EnsureShardsForWrite(ctx, wsh, msh); err != nil {
+		return nil, err
 	}
 
 	// 校验状态流转
@@ -472,7 +490,7 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		case "completed":
 			updateData["completed_at"] = now
 		}
-		err := updateOrderByID(ctx, sh, order.Id, updateData)
+		err := updateOrderByID(ctx, wsh, order.Id, updateData)
 		if err != nil {
 			return err
 		}
@@ -494,13 +512,13 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		case "completed":
 			subUpdateData["completed_at"] = now
 		}
-		err = updateSubOrdersByParentOrderID(ctx, sh, order.Id, subUpdateData)
+		err = updateSubOrdersByParentOrderID(ctx, wsh, order.Id, subUpdateData)
 		if err != nil {
 			return err
 		}
 
 		// 创建订单日志
-		if err = insertOrderLog(ctx, sh, g.Map{
+		if err = insertOrderLog(ctx, wsh, g.Map{
 			"order_id":      order.Id,
 			"order_no":      order.OrderNo,
 			"from_status":   order.Status,
@@ -514,7 +532,7 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		}
 
 		// Phase 3 双写：状态变更同样要镜像进分片（同事务，失败只记日志）
-		mirrorOrderBestEffort(ctx, order.OrderNo, order.Id, mirrorShardOfOrderNo(ctx, order.OrderNo))
+		mirrorOrderBestEffort(ctx, order.OrderNo, order.Id, msh)
 		return nil
 	})
 	if err != nil {
@@ -543,6 +561,16 @@ func (s *sOrders) GetByOrderNo(ctx context.Context, orderNo string) (*entity.Ord
 // 由调用方在事务中调用时，会自动加入该事务（GoFrame 从事务 ctx 中取 tx）。
 func (s *sOrders) MarkPaidByOrderNo(ctx context.Context, orderNo string, orderID int64) error {
 	return markOrderPaidByOrderNo(ctx, orderNo, orderID)
+}
+
+// EnsureShardsForOrderNo 确保该订单涉及的分片表存在（幂等、进程内缓存）。
+// 调用方必须在事务外调用（DDL 隐式提交）。
+func (s *sOrders) EnsureShardsForOrderNo(ctx context.Context, orderNo string) error {
+	wsh, err := shardFromOrderNo(ctx, orderNo)
+	if err != nil {
+		return err
+	}
+	return EnsureShardsForWrite(ctx, wsh, mirrorShardOfOrderNo(ctx, orderNo))
 }
 
 // StatsSummary 订单总数与已支付金额合计。

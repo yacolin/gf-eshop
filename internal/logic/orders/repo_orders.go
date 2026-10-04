@@ -2,12 +2,14 @@ package orders
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
 
 	"gf-eshop/internal/dao"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 )
 
@@ -29,24 +31,61 @@ func withOrdersTx(ctx context.Context, fn func(ctx context.Context, tx gdb.TX) e
 
 // ── 读取 ────────────────────────────────────────────────────────────────
 
-// findOrderWithShardByOrderNo 按业务单号查询订单，并把订单所在分片一并返回。
-// 同一条链路上的子表查询必须复用这个分片，避免各自推导导致读到不同月表。
-// 订单不存在时返回 (nil, shard{}, nil)。
+// findOrderWithShardByOrderNo 按业务单号查询订单，并把**实际读取源**的分片一并返回。
+//
+// 返回值里的 shard 有两个用途：① 同一条链路上的子表查询必须复用同一个源，
+// 避免「父单读主表、子表读分片」这种混源；② 它**不代表写目标** ——
+// 写路径另有 shardFromOrderNo（由 mode 决定），两者在灰度期间可能不同。
+//
+// Phase 4 读灰度：按比例命中分片时先读分片；读不到或读失败时，只要主表仍是真相源
+// （single）就回落主表并计数；monthly 下不回落（主表已停写，回落会读到过期数据）。
 func findOrderWithShardByOrderNo(ctx context.Context, orderNo string) (*entity.Orders, shard, error) {
-	sh, err := shardFromOrderNo(ctx, orderNo)
+	sh, shardOK := shardOfOrderNo(orderNo)
+	if !shardOK && shardMode(ctx) == shardModeMonthly {
+		return nil, shard{}, errcode.Newf(errcode.CodeInvalidParams,
+			"订单号 %q 无法解析出创建时间，无法定位分片", orderNo)
+	}
+
+	if shardOK && readFromShardByKey(ctx, orderNo) {
+		o, err := readOrderIn(ctx, sh, orderNo)
+		switch {
+		case err != nil:
+			shardFallbackCounter(ctx, "read_order_error")
+			g.Log().Warningf(ctx, "分片读订单失败: order_no=%s shard=%s err=%v", orderNo, sh.suffix, err)
+			if !allowShardFallback(ctx) {
+				return nil, sh, err
+			}
+		case o != nil:
+			// 切读阶段与主表对账（主表仍是真相源时才有意义）
+			compareShardAgainstMain(ctx, orderNo, o)
+			return o, sh, nil
+		default:
+			// 分片里没有这条：可能是镜像还没覆盖到。monthly 下这就是「不存在」
+			shardFallbackCounter(ctx, "read_order_miss")
+			if !allowShardFallback(ctx) {
+				return nil, sh, nil
+			}
+		}
+	}
+
+	o, err := readOrderIn(ctx, shard{}, orderNo)
 	if err != nil {
 		return nil, shard{}, err
 	}
+	// Phase 3 影子读：主读走主表时抽样比对分片（只记日志/计数）
+	shadowCompareOrder(ctx, orderNo, shard{}, o)
+	return o, shard{}, nil
+}
+
+// readOrderIn 在指定分片（零值=主表）按单号读订单；不存在时返回 (nil, nil)。
+func readOrderIn(ctx context.Context, sh shard, orderNo string) (*entity.Orders, error) {
 	var o *entity.Orders
-	err = model(ctx, sh, tableOrders).
+	if err := model(ctx, sh, tableOrders).
 		Where(dao.Orders.Columns().OrderNo, orderNo).
-		Scan(&o)
-	if err != nil {
-		return nil, shard{}, err
+		Scan(&o); err != nil {
+		return nil, err
 	}
-	// Phase 3 影子读：主读走主表时按比例再读分片做对账（只记日志/计数，不影响返回）
-	shadowCompareOrder(ctx, orderNo, sh, o)
-	return o, sh, nil
+	return o, nil
 }
 
 // findOrderByOrderNo 按业务单号查询订单；不存在时返回 (nil, nil)。
@@ -81,8 +120,11 @@ type orderListFilter struct {
 }
 
 // countOrdersByFilter 按筛选条件统计订单数。
+//
+// 只服务于 offset 分页（page/page_size）的 total，因此与 pageOrders 一样只在主表上做：
+// 分片模式下 offset 分页本身无法正确跨片归并（见 offsetListShard）。
 func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) {
-	sh, err := shardForScan(ctx, "订单列表统计")
+	sh, err := offsetListShard(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -93,40 +135,82 @@ func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) 
 	return int64(n), nil
 }
 
-// pageOrders 按筛选条件分页查询订单（固定 id 倒序）。
+// offsetListShard 决定 offset 分页（page/page_size）读哪里。
+//
+// offset 分页在分片下无法正确归并（每片各取 offset 再合并是错的），所以：
+//   - 主表仍是真相源（single）：回落主表并计数，保证灰度期间老客户端不受影响；
+//   - monthly（主表已停写）：回落只会读到过期数据 → 明确报错，提示改用游标分页。
+func offsetListShard(ctx context.Context) (shard, error) {
+	if shardMode(ctx) == shardModeMonthly {
+		return shard{}, errcode.Newf(errcode.CodeOrderShardNotReady,
+			"offset 分页在分片模式下无法正确跨片归并，请改用游标分页（cursor + size）")
+	}
+	if readShardsForList(ctx) {
+		shardFallbackCounter(ctx, "list_offset")
+	}
+	return shard{}, nil
+}
+
+// pageOrders 按筛选条件 offset 分页查询订单（固定 id 倒序）。
 func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*entity.Orders, error) {
-	sh, err := shardForScan(ctx, "订单列表分页")
+	sh, err := offsetListShard(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var list []*entity.Orders
-	err = listOrdersModel(ctx, sh, f).
-		Page(page, size).
-		OrderDesc(dao.Orders.Columns().Id).
-		Scan(&list)
-	if err != nil {
-		return nil, err
-	}
-	return list, nil
+	return listOrdersPage(ctx, sh, f, page, size, 0)
 }
 
 // pageOrdersByCursor 走 keyset 分页：取 id 小于 beforeID 的一页（固定 id 倒序）。
-// beforeID 为 0 表示首页。分表后每片各取一页再归并即可，不需要 offset。
+//
+// 分片模式下每片各取一页再按 id 归并即可 —— keyset 的正确性来自「全局前 N 条
+// 必然出现在某片的局部前 N 条里」，所以每片取 size 条就够了，不需要取全量。
 func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, size int) ([]*entity.Orders, error) {
-	sh, err := shardForScan(ctx, "订单游标分页")
+	if !readShardsForList(ctx) {
+		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+	}
+	shards, err := activeShards(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if len(shards) == 0 {
+		// 还没有任何分片表：退回主表，避免灰度把列表读空
+		shardFallbackCounter(ctx, "list_no_shard")
+		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+	}
+
+	var merged []*entity.Orders
+	for _, sh := range shards {
+		part, err := listOrdersPage(ctx, sh, f, 0, size, beforeID)
+		if err != nil {
+			if allowShardFallback(ctx) {
+				shardFallbackCounter(ctx, "list_shard_error")
+				g.Log().Warningf(ctx, "分片列表查询失败，本次回落主表: shard=%s err=%v", sh.suffix, err)
+				return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+			}
+			return nil, err
+		}
+		merged = append(merged, part...)
+	}
+	sort.Slice(merged, func(i, j int) bool { return merged[i].Id > merged[j].Id })
+	if len(merged) > size {
+		merged = merged[:size]
+	}
+	return merged, nil
+}
+
+// listOrdersPage 在指定分片上取一页（offset 或 keyset 二选一）。
+func listOrdersPage(ctx context.Context, sh shard, f orderListFilter, page, size int, beforeID int64) ([]*entity.Orders, error) {
 	m := listOrdersModel(ctx, sh, f)
 	if beforeID > 0 {
 		m = m.WhereLT(dao.Orders.Columns().Id, beforeID)
 	}
+	if page > 0 {
+		m = m.Page(page, size)
+	} else {
+		m = m.Limit(size)
+	}
 	var list []*entity.Orders
-	err = m.
-		OrderDesc(dao.Orders.Columns().Id).
-		Limit(size).
-		Scan(&list)
-	if err != nil {
+	if err := m.OrderDesc(dao.Orders.Columns().Id).Scan(&list); err != nil {
 		return nil, err
 	}
 	return list, nil
@@ -177,39 +261,86 @@ func updateOrderByOrderNo(ctx context.Context, sh shard, orderNo string, data g.
 	return err
 }
 
-// ── 看板聚合（跨片能力见 shardForScan） ───────────────────────────────────
+// ── 看板聚合（Phase 4：跨片 fan-out） ─────────────────────────────────────
+//
+// 分片模式下看板的聚合必须跨片归并。这里没有走 tx_order_daily_stats：
+// 该表只覆盖「订单数 / 营收」两项（趋势的金额口径、状态分布、热销商品都没有对应列），
+// 而且目前只有 Phase 2 的回填、没有事件驱动的累加，直接用会读到过期数据。
+// 详见 docs/order-sharding-design.md §5.6 与 §7 Phase 4。
+
+// aggregate 在「本次读路径选定的源」上执行聚合并归并：
+// 分片模式逐片查询后 merge，否则只查主表。
+//
+// 任一分片查询失败且允许回落时，**整段重做主表**（而不是把已累加的部分再叠加全量，
+// 那会重复计数）；monthly 下不允许回落，直接报错。
+func aggregate[T any](
+	ctx context.Context, op string,
+	query func(ctx context.Context, sh shard) (T, error),
+	merge func(acc *T, part T),
+) (T, error) {
+	var zero T
+	sources, err := readSources(ctx, op)
+	if err != nil {
+		return zero, err
+	}
+	var acc T
+	for _, sh := range sources {
+		part, err := query(ctx, sh)
+		if err != nil {
+			if sh.isZero() || !allowShardFallback(ctx) {
+				return zero, err
+			}
+			shardFallbackCounter(ctx, op)
+			g.Log().Warningf(ctx, "%s 在分片 %s 上失败，回落主表重算: %v", op, sh.suffix, err)
+			return query(ctx, shard{})
+		}
+		merge(&acc, part)
+	}
+	return acc, nil
+}
+
+// readSources 返回本次查询要读的源：分片模式返回全部活跃分片，否则返回 [主表]。
+// 一个分片表都没有时退回主表并计数（避免灰度把看板读成 0）。
+func readSources(ctx context.Context, op string) ([]shard, error) {
+	if !readShardsForList(ctx) {
+		return []shard{{}}, nil
+	}
+	shards, err := activeShards(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(shards) == 0 {
+		shardFallbackCounter(ctx, op+"_no_shard")
+		return []shard{{}}, nil
+	}
+	return shards, nil
+}
 
 // countAllOrders 统计订单总数（不含已软删除）。
 func countAllOrders(ctx context.Context) (int64, error) {
-	sh, err := shardForScan(ctx, "订单总数统计")
-	if err != nil {
-		return 0, err
-	}
-	n, err := model(ctx, sh, tableOrders).Count()
-	if err != nil {
-		return 0, err
-	}
-	return int64(n), nil
+	return aggregate(ctx, "count_orders",
+		func(ctx context.Context, sh shard) (int64, error) {
+			n, err := model(ctx, sh, tableOrders).Count()
+			return int64(n), err
+		},
+		func(acc *int64, part int64) { *acc += part })
 }
 
 // sumPaidAmount 统计已支付订单的实付金额合计（分）。
 func sumPaidAmount(ctx context.Context) (int64, error) {
-	sh, err := shardForScan(ctx, "营收合计")
-	if err != nil {
-		return 0, err
-	}
-	var row struct {
-		Value int64 `orm:"value"`
-	}
-	err = model(ctx, sh, tableOrders).
-		Fields("COALESCE(SUM(pay_amount), 0) AS value").
-		Where(dao.Orders.Columns().PaymentStatus, "paid").
-		Where("deleted_at IS NULL").
-		Scan(&row)
-	if err != nil {
-		return 0, err
-	}
-	return row.Value, nil
+	return aggregate(ctx, "sum_paid_amount",
+		func(ctx context.Context, sh shard) (int64, error) {
+			var row struct {
+				Value int64 `orm:"value"`
+			}
+			err := model(ctx, sh, tableOrders).
+				Fields("COALESCE(SUM(pay_amount), 0) AS value").
+				Where(dao.Orders.Columns().PaymentStatus, "paid").
+				Where("deleted_at IS NULL").
+				Scan(&row)
+			return row.Value, err
+		},
+		func(acc *int64, part int64) { *acc += part })
 }
 
 // orderDayTrendRow 按日聚合的原始行。
@@ -221,26 +352,54 @@ type orderDayTrendRow struct {
 
 // dailyOrderTrend 统计 since（含）之后的按日订单数与金额，date 形如 08-20。
 func dailyOrderTrend(ctx context.Context, since string) ([]orderDayTrendRow, error) {
-	sh, err := shardForScan(ctx, "订单趋势统计")
+	merged, err := aggregate(ctx, "daily_order_trend",
+		func(ctx context.Context, sh shard) (map[string]orderDayTrendRow, error) {
+			var rows []orderDayTrendRow
+			err := model(ctx, sh, tableOrders).
+				Fields(
+					"DATE_FORMAT(created_at, '%m-%d') AS date",
+					"COUNT(*) AS count",
+					"COALESCE(SUM(pay_amount), 0) AS amount",
+				).
+				Where("created_at >= ?", since).
+				Where("deleted_at IS NULL").
+				Group("date").
+				Order("date ASC").
+				Scan(&rows)
+			if err != nil {
+				return nil, err
+			}
+			byDate := make(map[string]orderDayTrendRow, len(rows))
+			for _, r := range rows {
+				byDate[r.Date] = r
+			}
+			return byDate, nil
+		},
+		func(acc *map[string]orderDayTrendRow, part map[string]orderDayTrendRow) {
+			if *acc == nil {
+				*acc = make(map[string]orderDayTrendRow, len(part))
+			}
+			for date, r := range part {
+				cur := (*acc)[date]
+				cur.Date = date
+				cur.Count += r.Count
+				cur.Amount += r.Amount
+				(*acc)[date] = cur
+			}
+		})
 	if err != nil {
 		return nil, err
 	}
-	var rows []orderDayTrendRow
-	err = model(ctx, sh, tableOrders).
-		Fields(
-			"DATE_FORMAT(created_at, '%m-%d') AS date",
-			"COUNT(*) AS count",
-			"COALESCE(SUM(pay_amount), 0) AS amount",
-		).
-		Where("created_at >= ?", since).
-		Where("deleted_at IS NULL").
-		Group("date").
-		Order("date ASC").
-		Scan(&rows)
-	if err != nil {
-		return nil, err
+	dates := make([]string, 0, len(merged))
+	for date := range merged {
+		dates = append(dates, date)
 	}
-	return rows, nil
+	sort.Strings(dates)
+	out := make([]orderDayTrendRow, 0, len(dates))
+	for _, date := range dates {
+		out = append(out, merged[date])
+	}
+	return out, nil
 }
 
 // orderStatusCountRow 按状态聚合的原始行。
@@ -251,20 +410,41 @@ type orderStatusCountRow struct {
 
 // orderStatusDistribution 按状态统计订单数。
 func orderStatusDistribution(ctx context.Context) ([]orderStatusCountRow, error) {
-	sh, err := shardForScan(ctx, "订单状态分布统计")
+	merged, err := aggregate(ctx, "order_status_dist",
+		func(ctx context.Context, sh shard) (map[string]int64, error) {
+			var rows []orderStatusCountRow
+			err := model(ctx, sh, tableOrders).
+				Fields(dao.Orders.Columns().Status, "COUNT(*) AS value").
+				Group(dao.Orders.Columns().Status).
+				Scan(&rows)
+			if err != nil {
+				return nil, err
+			}
+			byStatus := make(map[string]int64, len(rows))
+			for _, r := range rows {
+				byStatus[r.Status] += r.Value
+			}
+			return byStatus, nil
+		},
+		func(acc *map[string]int64, part map[string]int64) {
+			if *acc == nil {
+				*acc = make(map[string]int64, len(part))
+			}
+			for status, v := range part {
+				(*acc)[status] += v
+			}
+		})
 	if err != nil {
 		return nil, err
 	}
-	var rows []orderStatusCountRow
-	err = model(ctx, sh, tableOrders).
-		Fields(dao.Orders.Columns().Status, "COUNT(*) AS value").
-		Group(dao.Orders.Columns().Status).
-		Scan(&rows)
-	if err != nil {
-		return nil, err
+	out := make([]orderStatusCountRow, 0, len(merged))
+	for status, v := range merged {
+		out = append(out, orderStatusCountRow{Status: status, Value: v})
 	}
-	return rows, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].Status < out[j].Status })
+	return out, nil
 }
+
 
 // ── 供跨模块调用的复合写入 ────────────────────────────────────────────────
 

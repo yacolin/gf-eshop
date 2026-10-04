@@ -8,6 +8,7 @@ import (
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gtime"
+	"github.com/gogf/gf/v2/util/grand"
 
 	"gf-eshop/internal/errcode"
 )
@@ -210,17 +211,60 @@ func shadowReadPercent(ctx context.Context) int {
 	}
 }
 
-// shardForScan 用于无法由单号定位分片的查询（订单列表、看板聚合）。
+// ── Phase 4：读灰度 ───────────────────────────────────────────────────────
 //
-// Phase 0 未实现跨片 fan-out 与日汇总表，monthly 下直接报错；
-// 实现路径见 docs/order-sharding-design.md §5.5 / §5.6。
-func shardForScan(ctx context.Context, op string) (shard, error) {
-	if shardMode(ctx) != shardModeMonthly {
-		return shard{}, nil
+// 读路径按比例切到分片，是「切读」的灰度阶段：
+//   - mode=single（双写阶段）：orderShard.readShardsPercent 控制比例，缺省 0；
+//     命中分片但**没读到**时回落主表（此时主表仍是真相源），并计数；
+//   - mode=monthly（终态）：恒定读分片、**不回落** —— 主表这时已停写，
+//     回落到它只会读到过期数据（比如已支付却显示未支付）。
+
+// readShardsPercent 读侧灰度比例（0~100）。
+func readShardsPercent(ctx context.Context) int {
+	p := g.Cfg().MustGet(ctx, "orderShard.readShardsPercent", 0).Int()
+	switch {
+	case p <= 0:
+		return 0
+	case p > 100:
+		return 100
+	default:
+		return p
 	}
-	return shard{}, errcode.Newf(errcode.CodeOrderShardNotReady,
-		"%s 需要跨分片查询，当前尚未实现（Phase 2/4）；"+
-			"详见 docs/order-sharding-design.md §5.5/§5.6", op)
+}
+
+// readFromShardByKey 点查是否走分片：monthly 恒真；single 下按比例做**确定性**抽样
+// （复用 shouldShadow 的 crc32(key)%100，同一订单每次命中同一侧，便于复现）。
+func readFromShardByKey(ctx context.Context, key string) bool {
+	if shardMode(ctx) == shardModeMonthly {
+		return true
+	}
+	p := readShardsPercent(ctx)
+	if p <= 0 {
+		return false
+	}
+	return shouldShadow(key, p)
+}
+
+// readShardsForList 列表/看板是否走分片。列表无法按单条订单做确定性抽样，
+// 故 monthly 恒真，single 下按比例**每请求**抽样。
+func readShardsForList(ctx context.Context) bool {
+	if shardMode(ctx) == shardModeMonthly {
+		return true
+	}
+	p := readShardsPercent(ctx)
+	if p <= 0 {
+		return false
+	}
+	if p >= 100 {
+		return true
+	}
+	return grand.Intn(100) < p
+}
+
+// allowShardFallback 分片读未命中/失败时是否允许回落主表。
+// 只有主表仍是真相源（single）时才允许；monthly 下主表已停写，回落会读到过期数据。
+func allowShardFallback(ctx context.Context) bool {
+	return shardMode(ctx) != shardModeMonthly
 }
 
 // parseOrderNoTime 解析单号中第 [3,17) 位的 14 位时间戳。

@@ -3,6 +3,7 @@ package orders
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,106 @@ func parseMonth(v string) (time.Time, error) {
 			"月份 %q 格式非法，应为 2026-08 或 202608", v)
 	}
 	return t, nil
+}
+
+// ── 分片表的存在性保障与活跃分片 ─────────────────────────────────────────
+
+// ensuredShards 记录本次进程内已确认存在的分片，避免每次写入都做 DDL 探测。
+var ensuredShards sync.Map // 后缀 -> struct{}
+
+// EnsureShardTables 确保某个月的四张分片表存在（幂等，进程内只做一次）。
+//
+// ⚠️ 这是 DDL，**必须在事务之外调用**：MySQL 的 DDL 会隐式提交，
+// 放进写事务里会破坏原子性。
+func EnsureShardTables(ctx context.Context, sh shard) error {
+	if sh.isZero() {
+		return nil
+	}
+	if _, ok := ensuredShards.Load(sh.suffix); ok {
+		return nil
+	}
+	for _, base := range shardedTables {
+		table := sh.table(base)
+		if _, err := g.DB().Exec(ctx, "CREATE TABLE IF NOT EXISTS `"+table+"` LIKE `"+base+"`"); err != nil {
+			return fmt.Errorf("自动创建分片表 %s 失败: %w", table, err)
+		}
+	}
+	ensuredShards.Store(sh.suffix, struct{}{})
+	invalidateActiveShards() // 新分片要立刻能被列表/看板看到
+	g.Log().Infof(ctx, "订单分片表已就绪（按需自动创建）: %s", sh.suffix)
+	return nil
+}
+
+// EnsureShardsForWrite 在写入前确保主写分片与双写镜像分片都存在。
+// 只在事务外调用（DDL 隐式提交）。
+func EnsureShardsForWrite(ctx context.Context, targets ...shard) error {
+	for _, sh := range targets {
+		if err := EnsureShardTables(ctx, sh); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// activeShardsCache 活跃分片清单缓存。分片表按月新增，不需要每次查库。
+var activeShardsCache struct {
+	sync.RWMutex
+	at     time.Time
+	shards []shard
+}
+
+const activeShardsTTL = 60 * time.Second
+
+// invalidateActiveShards 让缓存立即失效（新建分片后调用）。
+func invalidateActiveShards() {
+	activeShardsCache.Lock()
+	activeShardsCache.at = time.Time{}
+	activeShardsCache.Unlock()
+}
+
+// activeShards 返回当前库中存在的分片（按月份升序），供跨片查询 fan-out 使用。
+//
+// 从 information_schema 枚举而不是靠配置维护清单：建分片的动作在应用侧
+// （EnsureShardTables / main shard --action=create），枚举能自动跟上。
+func activeShards(ctx context.Context) ([]shard, error) {
+	activeShardsCache.RLock()
+	if !activeShardsCache.at.IsZero() && time.Since(activeShardsCache.at) < activeShardsTTL {
+		cached := activeShardsCache.shards
+		activeShardsCache.RUnlock()
+		return cached, nil
+	}
+	activeShardsCache.RUnlock()
+
+	values, err := g.DB().GetArray(ctx,
+		"SELECT TABLE_NAME FROM information_schema.TABLES "+
+			"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE ?", tableOrders+"%")
+	if err != nil {
+		return nil, fmt.Errorf("枚举订单分片失败: %w", err)
+	}
+	var shards []shard
+	for _, v := range values {
+		suffix := strings.TrimPrefix(v.String(), tableOrders+"_")
+		if len(suffix) != 6 || !isAllDigits(suffix) {
+			continue
+		}
+		shards = append(shards, shard{suffix: suffix})
+	}
+	sort.Slice(shards, func(i, j int) bool { return shards[i].suffix < shards[j].suffix })
+
+	activeShardsCache.Lock()
+	activeShardsCache.at = time.Now()
+	activeShardsCache.shards = shards
+	activeShardsCache.Unlock()
+	return shards, nil
+}
+
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ── 建分片 ────────────────────────────────────────────────────────────────

@@ -103,6 +103,14 @@ func (s *sPayments) HandleCallback(ctx context.Context, req *v1.PaymentsCallback
 		return nil, errcode.ErrPaymentNotFound
 	}
 
+	// 支付成功会回写订单并触发分表双写；双写要落分片表，而建分片是 DDL
+	// （隐式提交），所以必须在事务外先把分片表准备好。
+	if req.Status == "success" {
+		if err = service.Orders().EnsureShardsForOrderNo(ctx, payment.OrderNo); err != nil {
+			return nil, err
+		}
+	}
+
 	err = dao.Payments.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		updateData := g.Map{
 			"status":       req.Status,

@@ -176,3 +176,31 @@ func shardMirrorCounter(ctx context.Context, kind string) {
 func shardShadowCounter(ctx context.Context, kind string) {
 	_, _ = g.Redis().Do(ctx, "INCR", "order:shard:shadow:"+kind)
 }
+
+// shardFallbackCounter 累计「分片读回落主表」的次数：灰度期间这个数应该很小且可解释，
+// 长期不为 0 说明分片缺数据或分片表缺失。
+func shardFallbackCounter(ctx context.Context, kind string) {
+	_, _ = g.Redis().Do(ctx, "INCR", "order:shard:fallback:"+kind)
+}
+
+// compareShardAgainstMain 反向影子读：主读走了分片时，再读一次主表做对账。
+//
+// 只在「主表仍是真相源」（single + 影子读抽样开启）时做：monthly 下主表已停写，
+// 拿它当基准只会得到假差异。
+func compareShardAgainstMain(ctx context.Context, orderNo string, shardOrder *entity.Orders) {
+	if !allowShardFallback(ctx) || shadowReadPercent(ctx) <= 0 {
+		return
+	}
+	var mainOrder *entity.Orders
+	if err := model(ctx, shard{}, tableOrders).
+		Where(dao.Orders.Columns().OrderNo, orderNo).
+		Scan(&mainOrder); err != nil {
+		shardShadowCounter(ctx, "error")
+		return
+	}
+	shardShadowCounter(ctx, "total")
+	if a, b := orderFingerprint(mainOrder), orderFingerprint(shardOrder); a != b {
+		shardShadowCounter(ctx, "diff")
+		g.Log().Warningf(ctx, "订单切读对账不一致: order_no=%s 主表=%s 分片=%s", orderNo, a, b)
+	}
+}
