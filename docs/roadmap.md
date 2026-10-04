@@ -136,11 +136,11 @@
 | 项 | 内容 |
 |----|------|
 | **背景** | 分表后 offset 分页无法跨片归并、`COUNT(*)` 要跨片 fan-out，后端已提供 keyset 游标分页（`ccd5be7`），需要两个前端仓库跟进 |
-| **新契约** | `GET /api/v1/orders?size=20[&cursor=<上一页的 next_cursor>]`；响应新增 `next_cursor`（为空表示没有更多）；**游标模式下 `total = -1` 表示未统计**，前端不要再显示「共 N 条」 |
-| **兼容性** | 当前 `single` 模式下 `page` + `page_size` 行为完全不变（`total` 仍精确），所以前端可以渐进迁移 |
-| **⚠️ 硬前置** | 一旦切到 `orderShard.mode: monthly`，offset 分页会返回 `7004`（无法跨片正确归并，见设计文档 §5.5）—— 也就是说**两个前端仓库必须先改用游标分页，才能切 monthly**。这是 Phase 5 的前置条件，不是可选优化 |
-| **灰度期行为** | 只开读灰度（`readShardsPercent`）时，offset 分页会**回落主表**并计入 `order:shard:fallback:list_offset`，老客户端不受影响 |
-| **状态** | ✅ `gf-eshop-fe` 已完成（`6398ed6`）：`src/pages/Order/index.tsx` 改传 `size` + `cursor`，关掉 ProTable 自带分页器改为自渲染「上一页/下一页」（游标无法跳页），不再显示「共 N 条」（后端 `total=-1`），搜索条件变化时重置游标栈。eslint 无错、`tsc` 改动前后同为 12 个既有错误、`pnpm build` 通过 |
+| **新契约** | `GET /api/v1/orders?size=20[&cursor=<上一页的 next_cursor>]`；响应 `list` + `next_cursor`（为空表示没有更多）+ `has_more`，**不返回 `total`**（游标分页不做 COUNT，返回 `-1` 这类占位值会被误读成「总共就这么多单」）。字段与 products 列表契约完全一致 |
+| **兼容性** | **破坏性**：`page`/`page_size` 已移除，传了直接报参数错误（`single` 下也报）—— 静默忽略会让 `?page=3` 每次都返回第一页，调用方却以为翻页成功。前端改用 `size` + `cursor`（`gf-eshop-fe` 已于 `6398ed6` 完成） |
+| **⚠️ 硬前置** | ~~一旦切到 `orderShard.mode: monthly`，offset 分页会返回 `7004`~~ —— 该硬前置**已消解**：offset 分页整条路径已删除，列表只剩游标分页，`monthly` 下无需再靠报错兜底 |
+| **灰度期行为** | 只开读灰度（`readShardsPercent`）时，列表读源**回落主表**并计数（`order:shard:fallback:list_main`），游标分页在两种模式下行为一致 |
+| **状态** | ✅ `gf-eshop-fe` 已完成（`6398ed6`）：`src/pages/Order/index.tsx` 改传 `size` + `cursor`，关掉 ProTable 自带分页器改为自渲染「上一页/下一页」（游标无法跳页），不再显示「共 N 条」，搜索条件变化时重置游标栈。eslint 无错、`tsc` 改动前后同为 12 个既有错误、`pnpm build` 通过 |
 | **miniprogram** | 该仓库目前只有 `pages/index` 与 `pages/product`，**没有订单列表页**，因此没有要改的代码（路线图原先写的「两个仓库都要跟进」不准确） |
 | **仍待办** | 前端错误处理里补上「非法游标」这一种（后端返回参数错误而不是空列表）；上拉加载体验优化 |
 
@@ -158,6 +158,10 @@
 
 ## 三、已完成（归档对照）
 
+> 下表是**历史记录**（尤其 Phase 4~6 那些「offset 分页回落/报 7004」的实测结论）。
+> 当前分页契约以 §2.6 与 [`CLAUDE.md`](../CLAUDE.md) 为准：orders 只剩游标分页，
+> `page`/`page_size` 已移除，响应不返回 `total`。
+
 | 事项 | 提交 | 说明 |
 |------|------|------|
 | ES 接入 brands | `7b9f12b` | 走 ES 的有筛选路径 + Redis ZSET 无筛选路径保留；别名零停机重建；双写；熔断降级；启动对账自愈 |
@@ -171,7 +175,9 @@
 | 修复交易域 4 处写入约束冲突（P0） | `ea94fb2` `bfa5525` | 见 §2.5：JSON 列、NOT NULL、可空+唯一、`Scan` ErrNoRows 四类；建单/支付/退款/加购四条路径恢复可用 |
 | 修复订单接口测试（鉴权 + 可重复执行） | `6e7c1ac` | 业务接口改用用户令牌（原先用 staff 令牌必然 401）；`transaction_id` 不再硬编码；28/28 且可重复执行 |
 | 订单分表 Phase 2（建分片 + 迁移 + 对账） | `b4a3fe1` | `main shard --action=create\|migrate\|verify`；8 张分片表、2000 单 + 5025 明细迁入、32 天日汇总回填；三重对账（行数 + 全字段 CRC32 + 金额）通过且可重复执行；去掉两个 `AUTO_INCREMENT` |
-| 订单列表游标分页（keyset） | `ccd5be7` | `size` + `cursor`（base64(id)，与 products 一致）、`next_cursor`、游标模式 `total=-1`；page 模式行为不变；套件 36/36，前端适配见 §2.6 |
+| 订单列表游标分页（keyset） | `ccd5be7` | `size` + `cursor`（base64(id)，与 products 一致）、`next_cursor`、游标模式 `total=-1`；套件 36/36，前端适配见 §2.6 |
+| products / orders 游标契约统一 | 见下 | 响应统一 `list` + `next_cursor` + `has_more`；products 响应 `cursor` 改名 `next_cursor`；orders 补 `has_more`（原先 `len==size` 就当有下一页，末页刚好整除时会多翻一次空页）；两侧非法游标都报参数错误、默认 `size` 统一 20 |
+| 游标契约收紧 | 见下 | ① **响应去掉 `total`**（products 的 `total=-1` 与 orders 的 `-1` 一并删除：占位值容易被误读成总条数）；② **orders 的 `page`/`page_size` 及整条 offset 路径删除**（`pageOrders` / `countOrdersByFilter` / `offsetListSource` 一并移除，`listOrdersPage` 只剩 keyset），传了这两个参数报 1002 而不是静默返回第一页；`order_no` 点查与时间窗逻辑不变 |
 | 订单分表 Phase 3（双写 + 影子读） | 见 §1.3 | 事务内按订单整单镜像（自愈、原子）；影子读确定性抽样 + Redis 计数；反向验证能抓到差异；migrate 变全列覆盖因而具备重放能力 |
 | 订单分表 Phase 4（灰度切读 + 跨片查询） | 见 §1.3 | 读侧灰度 + 回落计数；列表 keyset 跨片归并；offset 分页 single 回落 / monthly 报 7004；看板 5 项聚合 fan-out；双写自动建当月分片；monthly 终态实测通过 |
 | 订单分表 Phase 5（停双写 + 终态加固） | 见 §1.3 | 写只落分片 / 读只走分片不回落；migrate 在终态被禁止（7006）；带 order_no 的列表走等价点查；单测与接口套件都改成模式无关（37/37 × 2） |

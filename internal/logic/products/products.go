@@ -29,15 +29,12 @@ func init() {
 }
 
 func (s *sProducts) List(ctx context.Context, req *v1.ProductsListReq) (*v1.ProductsListRes, error) {
-	size := req.Size
-	if size <= 0 {
-		size = 10
-	}
-	if size > 100 {
-		size = 100
-	}
+	size := normalizeListSize(req.Size)
 
-	cursorId := decodeCursor(req.Cursor)
+	cursorId, err := decodeCursor(req.Cursor)
+	if err != nil {
+		return nil, err
+	}
 
 	// ZSET 路径：仅当没有文本搜索/价格筛选时可用
 	if req.Name == "" && req.PriceMin == 0 && req.PriceMax == 0 {
@@ -66,7 +63,7 @@ func (s *sProducts) List(ctx context.Context, req *v1.ProductsListReq) (*v1.Prod
 // ES 与 DB 两条路径共用，保证组装逻辑完全一致。
 func buildListFromIDs(ctx context.Context, ids []int64, hasMore bool) (*v1.ProductsListRes, error) {
 	if len(ids) == 0 {
-		return &v1.ProductsListRes{List: make([]*v1.ProductsListItem, 0)}, nil
+		return emptyListResponse(), nil
 	}
 	products, err := listByIDs(ctx, ids)
 	if err != nil {

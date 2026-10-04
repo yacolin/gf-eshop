@@ -5,12 +5,30 @@ import (
 	"strconv"
 
 	"gf-eshop/api/products/v1"
+	"gf-eshop/internal/errcode"
 	"gf-eshop/internal/model/entity"
 )
 
 // 本文件负责「数据 → 响应结构」的组装，不访问数据库。
 
 // ── 列表 ────────────────────────────────────────────────────────────────
+
+// 每页条数默认值与上限，与 orders 列表保持一致。
+const (
+	defaultListSize = 20
+	maxListSize     = 100
+)
+
+// normalizeListSize 归一化每页条数：<=0 取默认值，超上限则截断。
+func normalizeListSize(size int) int {
+	if size <= 0 {
+		return defaultListSize
+	}
+	if size > maxListSize {
+		return maxListSize
+	}
+	return size
+}
 
 // buildListItems 组装列表项：商品实体 + 价格区间/总库存。
 func buildListItems(products []*entity.Products, stats map[int64]productStats) []*v1.ProductsListItem {
@@ -27,16 +45,26 @@ func buildListItems(products []*entity.Products, stats map[int64]productStats) [
 	return list
 }
 
-// buildListResponse 组装列表响应：末尾条目 ID 作为下一页游标。
+// buildListResponse 组装列表响应：末位条目 ID 作为下一页游标。
+// 只有 hasMore 时才给出 next_cursor —— 保证「next_cursor 为空 ⟺ 没有更多」这一
+// 两个模块共用的语义（否则末页会回一个指不到东西的游标）。
+// 刻意不返回 total：游标分页不做 COUNT（与 orders 一致）。
 func buildListResponse(products []*entity.Products, stats map[int64]productStats, hasMore bool) *v1.ProductsListRes {
-	cursor := ""
-	if len(products) > 0 {
-		cursor = encodeCursor(products[len(products)-1].Id)
+	nextCursor := ""
+	if hasMore && len(products) > 0 {
+		nextCursor = encodeCursor(products[len(products)-1].Id)
 	}
 	return &v1.ProductsListRes{
-		List:    buildListItems(products, stats),
-		Cursor:  cursor,
-		HasMore: hasMore,
+		List:       buildListItems(products, stats),
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}
+}
+
+// emptyListResponse 空结果响应：空切片而非 nil，字段值与「查到了但没有下一页」一致。
+func emptyListResponse() *v1.ProductsListRes {
+	return &v1.ProductsListRes{
+		List: make([]*v1.ProductsListItem, 0),
 	}
 }
 
@@ -45,17 +73,22 @@ func encodeCursor(id int64) string {
 	return base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(id, 10)))
 }
 
-// decodeCursor 解析游标；空值或非法游标按首页（0）处理。
-func decodeCursor(cursor string) int64 {
+// decodeCursor 解析游标；空字符串代表首页（返回 0）。
+// 非法游标**返回错误**而不是静默当成首页 —— 静默降级会让调用方以为翻到了下一页，
+// 实际又拿到第一页数据（此处与 orders 行为一致）。
+func decodeCursor(cursor string) (int64, error) {
 	if cursor == "" {
-		return 0
+		return 0, nil
 	}
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
-		return 0
+		return 0, errcode.Newf(errcode.CodeInvalidParams, "游标格式非法（应为 base64(id)）")
 	}
-	id, _ := strconv.ParseInt(string(b), 10, 64)
-	return id
+	id, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errcode.Newf(errcode.CodeInvalidParams, "游标内容非法: %q", string(b))
+	}
+	return id, nil
 }
 
 // ── 详情 ────────────────────────────────────────────────────────────────

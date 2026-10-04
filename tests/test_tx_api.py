@@ -173,12 +173,13 @@ def test_list_orders(base_url):
     print(f"3. 订单列表测试（ListOrders）")
     print(f"{'='*60}")
 
-    # 3.1 正常列表（一律用游标：offset 分页在分表模式下不可用）
+    # 3.1 正常列表（只有游标分页一种形态；响应不再返回 total）
     r = req("GET", f"{base_url}/api/v1/orders?size=10")
     ok(r, "3.1 订单列表")
     if r.get("code") == 0:
         count = len(r["data"]["list"]) if r["data"]["list"] else 0
-        print(f"    当前页{count}条，total={r['data']['total']}（游标模式为 -1 表示未统计）")
+        print(f"    当前页{count}条，has_more={r['data'].get('has_more')}")
+        check("total" not in r["data"], "3.1.1 响应不再返回 total（避免被误解为总条数）")
         if r["data"]["list"]:
             first = r["data"]["list"][0]
             print(f"    最新订单: {first.get('order_no')}, 状态={first.get('status')}")
@@ -197,18 +198,22 @@ def test_list_orders(base_url):
         r = req("GET", f"{base_url}/api/v1/orders?order_no={order_no}")
         ok(r, f"3.3 按订单号 {order_no} 查询")
         if r.get("code") == 0:
-            print(f"    查到{r['data']['total']}条")
+            hits = r["data"]["list"] or []
+            check(len(hits) == 1 and hits[0]["order_no"] == order_no, "3.3.1 点查命中该单")
+            print(f"    查到{len(hits)}条")
 
     test_list_orders_cursor(base_url)
 
 
 def test_list_orders_cursor(base_url):
-    """3.4~3.6 游标（keyset）分页。
+    """3.4~3.9 游标（keyset）分页 —— 列表唯一的分页形态。
 
-    分表后 offset 分页无法跨片归并、COUNT 也要跨片，所以列表提供游标分页：
-    游标模式下 total 返回 -1（未统计），下一页游标由 next_cursor 给出。
+    分表后 offset 分页无法跨片归并、COUNT 也要跨片，所以列表只有游标分页：
+    响应给出 next_cursor + has_more（两者语义一致，末页同时为空/false），
+    **不返回 total**（避免被误解为总条数）；已移除的 page/page_size 传了直接报错。
+    字段名与 products 列表完全一致。
     """
-    # 3.4 首页：total 为 -1、给出 next_cursor
+    # 3.4 首页：给出 next_cursor + has_more，且没有 total
     r = req("GET", f"{base_url}/api/v1/orders?size=5")
     ok(r, "3.4 游标分页首页")
     first_page_ids, next_cursor = [], ""
@@ -217,8 +222,9 @@ def test_list_orders_cursor(base_url):
         first_page_ids = [o["id"] for o in data["list"]]
         next_cursor = data.get("next_cursor", "")
         check(len(first_page_ids) == 5, "3.4.1 返回 5 条")
-        check(data["total"] == -1, "3.4.2 游标模式 total 为 -1（未统计）")
+        check("total" not in data, "3.4.2 响应不含 total")
         check(next_cursor != "", "3.4.3 返回 next_cursor")
+        check(data.get("has_more") is True, "3.4.4 has_more 与 next_cursor 一致（有下一页）")
 
     # 3.5 用 next_cursor 翻下一页：与前页不重叠，且 id 更小
     if next_cursor:
@@ -234,8 +240,14 @@ def test_list_orders_cursor(base_url):
     r = req("GET", f"{base_url}/api/v1/orders?size=5&cursor=not-base64!!")
     check(r.get("code") != 0, "3.6 非法游标被拒绝")
 
-    # 3.8 月份窗口：只查一个分片；带 month 后 offset 分页恢复精确
-    #     （不自造月份，从列表里取一张单的月份，保证与当前数据环境无关）
+    # 3.7 已移除的 page / page_size 必须明确报错（静默忽略 = 每次都返回第一页）
+    for legacy in ("page=1&page_size=5", "page=3", "page_size=5"):
+        r = req("GET", f"{base_url}/api/v1/orders?{legacy}")
+        check(r.get("code") != 0, f"3.7 已移除的 {legacy} 被拒绝")
+        if r.get("code") == 0:
+            print(f"    ✗ {legacy} 竟被接受: {r['data']}")
+
+    # 3.8 月份窗口：只查一个分片（不自造月份，从列表里取一张单的月份，保证与环境无关）
     r = req("GET", f"{base_url}/api/v1/orders?size=1")
     if r.get("code") == 0 and r["data"]["list"]:
         sample = r["data"]["list"][0]
@@ -249,13 +261,11 @@ def test_list_orders_cursor(base_url):
             check(any(o["order_no"] == sample["order_no"] for o in d["list"]),
                   "3.8.3 该月的单确实出现在结果里")
             check(d.get("applied_from", "").startswith(month[:4]), "3.8.4 回显窗口起点")
-        r = req("GET", f"{base_url}/api/v1/orders?month={month}&page=1&page_size=5")
-        check(r.get("code") == 0 and isinstance(r["data"].get("total"), int) and r["data"]["total"] >= 0,
-              "3.8.5 带 month 后 offset 分页恢复精确（单分片内可偏移）")
 
         # 3.9 点查不受月份窗口限制（客服拿单号找单）
         r = req("GET", f"{base_url}/api/v1/orders?order_no={sample['order_no']}&month=202501")
-        check(r.get("code") == 0 and r["data"]["total"] == 1,
+        hits = (r.get("data") or {}).get("list") or []
+        check(r.get("code") == 0 and len(hits) == 1 and hits[0]["order_no"] == sample["order_no"],
               "3.9 按订单号查询绕开月份窗口")
 
     # 3.10 不带时间参数：默认窗口兜底 + 回显（避免客户端以为「就只有这么多单」）
@@ -265,17 +275,6 @@ def test_list_orders_cursor(base_url):
         check(d.get("window_defaulted") is True, "3.10.1 未传时间参数时标记为默认窗口")
         check(bool(d.get("applied_from")) and bool(d.get("applied_to")), "3.10.2 回显生效区间")
         check(bool(d.get("applied_months")), "3.10.3 回显命中月份列表")
-
-    # 3.7 offset 分页（page/page_size）：single 下回落主表仍可用；
-    #     monthly（分表已切终态）下无法跨片归并，必须明确报 7004 而不是给出错的结果
-    r = req("GET", f"{base_url}/api/v1/orders?page=1&page_size=5")
-    if r.get("code") == 0:
-        check(isinstance(r["data"].get("total"), int) and r["data"]["total"] >= 0,
-              "3.7 offset 分页可用（单表模式），total 精确")
-        print("    当前为单表模式：offset 分页回落主表")
-    else:
-        check(r.get("code") == 7004, "3.7 offset 分页在分表终态下报 7004")
-        print(f"    当前为分表终态（monthly）：offset 分页明确拒绝（{r.get('message', '')[:60]}）")
 
 
 def test_order_detail(base_url, order_no):

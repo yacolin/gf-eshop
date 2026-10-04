@@ -122,35 +122,8 @@ type orderListFilter struct {
 	Window orderListWindow
 }
 
-// countOrdersByFilter 按筛选条件统计订单数。
-//
-// 只服务于 offset 分页（page/page_size）的 total，因此与 pageOrders 一样只在主表上做：
-// 分片模式下 offset 分页本身无法正确跨片归并（见 offsetListShard）。
-func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) {
-	src, err := offsetListSource(ctx, f)
-	if err != nil {
-		return 0, err
-	}
-	switch {
-	case src.Main:
-		n, err := listOrdersModel(ctx, shard{}, f).Count()
-		if err != nil {
-			return 0, err
-		}
-		return int64(n), nil
-	case len(src.Shards) == 0:
-		return 0, nil // 窗口内没有分片：空结果（不回落主表，否则会返回无关月份的行）
-	default:
-		n, err := listOrdersModel(ctx, src.Shards[0], f).Count()
-		if err != nil {
-			return 0, err
-		}
-		return int64(n), nil
-	}
-}
-
 // listShardForPointLookup 列表条件里带了 order_no 时，它其实等价于点查：
-// 直接定位到那一个月，单分片内的 offset / keyset 都精确，不需要跨片归并。
+// 直接定位到那一个月，单分片内的 keyset 精确，不需要跨片归并。
 // 返回 false 表示这不是点查（或当前模式仍应读主表）。
 func listShardForPointLookup(ctx context.Context, f orderListFilter) (shard, bool) {
 	if f.OrderNo == "" || shardMode(ctx) != shardModeMonthly {
@@ -159,48 +132,11 @@ func listShardForPointLookup(ctx context.Context, f orderListFilter) (shard, boo
 	return shardOfOrderNo(f.OrderNo)
 }
 
-// offsetListSource 决定 offset 分页（page/page_size）读哪里。
-//
-// offset 分页在**多分片**下无法正确归并（每片各取 offset 再合并是错的），但：
-//   - 带 order_no 的查询等价于点查 → 单分片，精确；
-//   - **带 month / 区间且落在单个分片内** → 也精确 —— 这是新增月份参数顺带恢复的能力：
-//     前端只要带上月份，老的 page/page_size 页面就能继续用，不必立刻改游标；
-//   - 多分片：主表仍是真相源（single）时回落主表并计数；monthly 下明确报错并提示带月份。
-func offsetListSource(ctx context.Context, f orderListFilter) (listSource, error) {
-	src, err := resolveListSource(ctx, f)
-	if err != nil {
-		return listSource{}, err
-	}
-	if src.Main || len(src.Shards) <= 1 {
-		return src, nil
-	}
-	return listSource{}, errcode.Newf(errcode.CodeOrderShardNotReady,
-		"offset 分页在跨分片时无法正确归并（本次命中 %d 个分片）："+
-			"请改用游标分页（cursor + size），或带上 month（如 month=%s）把范围收窄到单个月；"+
-			"若已知订单号，直接带 order_no 查询即可精确定位",
-		len(src.Shards), f.Window.Months[0])
-}
-
-// pageOrders 按筛选条件 offset 分页查询订单（固定 id 倒序）。
-func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*entity.Orders, error) {
-	src, err := offsetListSource(ctx, f)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case src.Main:
-		return listOrdersPage(ctx, shard{}, f, page, size, 0)
-	case len(src.Shards) == 0:
-		return nil, nil
-	default:
-		return listOrdersPage(ctx, src.Shards[0], f, page, size, 0)
-	}
-}
-
 // pageOrdersByCursor 走 keyset 分页：取 id 小于 beforeID 的一页（固定 id 倒序）。
 //
 // 分片模式下每片各取一页再按 id 归并即可 —— keyset 的正确性来自「全局前 N 条
 // 必然出现在某片的局部前 N 条里」，所以每片取 size 条就够了，不需要取全量。
+// （调用方传的是 size+1，多出来的那条只用于判 has_more。）
 func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, size int) ([]*entity.Orders, error) {
 	src, err := resolveListSource(ctx, f)
 	if err != nil {
@@ -208,22 +144,22 @@ func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, 
 	}
 	switch {
 	case src.Main:
-		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+		return listOrdersPage(ctx, shard{}, f, size, beforeID)
 	case len(src.Shards) == 0:
 		return nil, nil // 窗口内没有分片：空页
 	case len(src.Shards) == 1:
 		// 只命中一个分片：不需要归并（这也是「带 month 更省」的原因）
-		return listOrdersPage(ctx, src.Shards[0], f, 0, size, beforeID)
+		return listOrdersPage(ctx, src.Shards[0], f, size, beforeID)
 	}
 
 	var merged []*entity.Orders
 	for _, sh := range src.Shards {
-		part, err := listOrdersPage(ctx, sh, f, 0, size, beforeID)
+		part, err := listOrdersPage(ctx, sh, f, size, beforeID)
 		if err != nil {
 			if allowShardFallback(ctx) {
 				shardFallbackCounter(ctx, "list_shard_error")
 				g.Log().Warningf(ctx, "分片列表查询失败，本次回落主表: shard=%s err=%v", sh.suffix, err)
-				return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+				return listOrdersPage(ctx, shard{}, f, size, beforeID)
 			}
 			return nil, err
 		}
@@ -236,17 +172,13 @@ func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, 
 	return merged, nil
 }
 
-// listOrdersPage 在指定分片上取一页（offset 或 keyset 二选一）。
-func listOrdersPage(ctx context.Context, sh shard, f orderListFilter, page, size int, beforeID int64) ([]*entity.Orders, error) {
+// listOrdersPage 在指定源上取 keyset 一页：id < beforeID（beforeID<=0 即首页）固定 id 倒序。
+func listOrdersPage(ctx context.Context, sh shard, f orderListFilter, size int, beforeID int64) ([]*entity.Orders, error) {
 	m := listOrdersModel(ctx, sh, f)
 	if beforeID > 0 {
 		m = m.WhereLT(dao.Orders.Columns().Id, beforeID)
 	}
-	if page > 0 {
-		m = m.Page(page, size)
-	} else {
-		m = m.Limit(size)
-	}
+	m = m.Limit(size)
 	var list []*entity.Orders
 	if err := m.OrderDesc(dao.Orders.Columns().Id).Scan(&list); err != nil {
 		return nil, err

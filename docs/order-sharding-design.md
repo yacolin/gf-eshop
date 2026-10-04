@@ -340,9 +340,9 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 | `PUT /orders/{order_no}/status` | 同上 | 无 |
 | 支付回调按 `order_no` 回写 | 同上 | 无 |
 | `POST /orders` 建单 | 定单一时间基准 → 落当前月分片 | 无 |
-| `GET /orders?order_no=x` | ✅ **已实现**（Phase 5）：等价于点查，直接路由到单号内嵌时间对应的分片，单分片内 offset/keyset 都精确；两种模式行为一致 | 无 |
-| `GET /orders?page&page_size` | 保留：single 下**回落主表**（老客户端不受影响）；monthly 下明确报 `7004`（offset 无法跨片正确归并） | ⚠️ monthly 下行为变更 |
-| `GET /orders?size&cursor` | ✅ **已实现**（Phase 2 定义、Phase 4 跨片）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`。分片模式下各活跃片各取一页 → 按 id 倒序归并 → 取前 `size` 条（keyset 的正确性来自「全局前 N 条必在某片的局部前 N 条里」） | 新增（与 products 的游标约定一致） |
+| `GET /orders?order_no=x` | ✅ **已实现**（Phase 5）：等价于点查，直接路由到单号内嵌时间对应的分片，单分片内 keyset 精确；两种模式行为一致 | 无 |
+| `GET /orders?page&page_size` | ❌ **已移除**（原为「single 回落主表 / monthly 报 `7004`」）：整条 offset 路径删掉了，传这两个参数统一报 1002。理由见下方 2026-10-05 说明 | ⚠️ 破坏性（老客户端必改） |
+| `GET /orders?size&cursor` | ✅ **已实现**（Phase 2 定义、Phase 4 跨片）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor` + `has_more`（**不返回 `total`**）。分片模式下各活跃片各取 `size+1` 条 → 按 id 倒序归并 → 取前 `size` 条（keyset 的正确性来自「全局前 N 条必在某片的局部前 N 条里」；多取的一条判 `has_more`） | 新增（与 products 的游标契约**逐字段一致**：请求 `cursor`+`size`，响应 `list`+`next_cursor`+`has_more`） |
 | `GET /orders?user_id=x` 无时间窗 | ✅ **已实现**：`month=YYYYMM`（路由单分片）/ `created_from`+`created_to`（区间）/ 都不传则**默认近 12 个月**（`orderShard.defaultWindowMonths`）。响应**回显**生效区间与命中月份（`applied_from`/`applied_to`/`applied_months`/`window_defaulted`） | ⚠️ 行为变更（不带时间参数时只看近 12 个月） |
 | dashboard 全部聚合 | ✅ **已实现**（Phase 4）：5 项聚合**跨片 fan-out 归并**（订单数/营收求和；趋势按日、状态按状态、热销按商品累加）。**没有**改走日汇总表，原因见 §5.6 | 需跨片归并 |
 | 「今天待发货」这类**按业务时间+状态**的运营检索 | `created_at` 分表**无法覆盖** → **必须走 ES**（§5.7） | 新增能力 |
@@ -352,6 +352,18 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 `gf-eshop-fe`、`gf-eshop-miniprogram`，以及现有回归用例
 （`tests/test_tx_api.py:152`、`:163`、`:173` 都在断言 `total`）。
 建议新增 `cursor` + `size`，`total` 仅在带时间窗时返回精确值，否则返回 `-1` 表示「不精确」。
+
+> 2026-10-05 已按上面的建议落地，并把 products / orders 的游标字段统一成同一份：
+> 请求 `cursor` + `size`（默认 20、上限 100），响应 `list` + `next_cursor` + `has_more`。
+> 对**已有前端**的影响：products 列表响应里的 `cursor` 字段改名为 `next_cursor`（旧字段不再返回），
+> orders 新增 `has_more`（`next_cursor` 语义不变，前端可继续只判它）。
+>
+> **同日进一步收紧**（见 [`roadmap.md`](roadmap.md) §3 归档「游标契约收紧」）：
+> ① 响应**不再返回 `total`** —— 游标分页不做 COUNT，`-1` 这类占位值会被误读成「总共就这么多单」；
+> ② orders 的 `page`/`page_size` **彻底移除**（连同 `pageOrders` / `countOrdersByFilter` /
+> `offsetListSource`，以及 `7004` 那条分支），传这两个参数报 1002 —— 静默忽略会让 `?page=3`
+> 每次都返回第一页，调用方却以为翻页成功。此前的「硬前置」随之消解：列表只剩游标分页，
+> `monthly` 下不需要再靠报错兜底。
 
 > 这印证了 CLAUDE.md 里那句话：**ES 是加速器，不是唯一真相源**。
 > 分表后它同时变成「跨分片检索层」—— 详情/写走分片 MySQL，列表/运营检索走 ES。
@@ -375,9 +387,11 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 2. **`order_no` 点查不套时间窗**：客服拿单号找单不能被「默认只看近 12 个月」挡住
    （单号里含时间，路由本来就能定位到单分片）。这条是实测中发现的 bug ——
    最初只在**路由**上绕开了窗口、**过滤条件**仍在生效，结果查不到非当月的单。
-3. **带 `month` 后 offset 分页恢复精确**：单分片内的 `page/page_size` + `total` 是准的，
-   所以没改游标的老页面只要带上月份就能继续用（不带则跨片，返回 `7004`）。
-   此时**不能**回落主表 —— 那会返回与该月份无关的行，所以「窗口内没有分片」就是空结果。
+3. ~~**带 `month` 后 offset 分页恢复精确**：单分片内的 `page/page_size` + `total` 是准的，
+   所以没改游标的老页面只要带上月份就能继续用（不带则跨片，返回 `7004`）。~~
+   **已作废**（2026-10-05）：`page`/`page_size` 与整条 offset 路径已删除，带不带 `month`
+   都走游标分页 —— `month` 的价值只剩「把翻页收窄到单个分片」（上表：1 次 vs 36 次查询）。
+   「窗口内没有分片不能回落主表」这条依然成立 —— 那会返回与该月份无关的行，所以空结果就是空结果。
 
 > 口径提醒：月份按**下单时间**（`created_at`，即分片键）。若要按「支付/发货时间」筛，
 > 那不是分片键、无法路由，只能全片 fan-out 或走 ES（§5.7）。
@@ -672,8 +686,10 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 - 切读阶段对账方向**反过来**：主读走分片时再读一次主表比对（`compareShardAgainstMain`，
   只在 `single` + `shadowReadPercent>0` 时做），差异率与回落次数都进 Redis 计数。
 - **列表**：游标分页跨片 fan-out —— 各活跃片各取一页，按 id 倒序归并取前 `size` 条；
-  keyset 的正确性来自「全局前 N 条必然出现在某片的局部前 N 条里」，所以每片取 `size` 条就够。
-  offset 分页无法跨片正确归并：`single` 下回落主表（老客户端不受影响），`monthly` 下明确报 `7004`。
+  keyset 的正确性来自「全局前 N 条必然出现在某片的局部前 N 条里」，所以每片取 `size + 1` 条就够
+  （多出的那条只用于判 `has_more`）。
+  ~~offset 分页无法跨片正确归并：`single` 下回落主表（老客户端不受影响），`monthly` 下明确报 `7004`。~~
+  **已作废**（2026-10-05）：offset 分页整条路径已移除，列表只有游标分页。
 - **看板**：5 项聚合全部跨片 fan-out（详见 §5.6 的修正说明）。
 - **自动建分片**：写入前用 `CREATE TABLE IF NOT EXISTS ... LIKE` 幂等建表（进程内缓存，
   每片只做一次），于是**双写会自动吸入当月分片**，不会再因为「当月分片还没建」而静默失败。
@@ -695,7 +711,7 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 | 分片缺行回落 | 只在主表存在的订单仍能点到；`fallback:read_order_miss` +1 |
 | 未镜像的行 | 列表/看板**看不见它**（分片 2001 / 主表 2002）—— 这正是切读前必须保证分片完整的原因 |
 | 列表跨片 | 翻完全部 2001 条与主表 id 集合完全一致、严格 id 倒序、无重复 |
-| offset 分页 | `single` 下回落主表且 total 正确；`monthly` 下返回 `7004` |
+| ~~offset 分页~~ | ~~`single` 下回落主表且 total 正确；`monthly` 下返回 `7004`~~ → 该能力已于 2026-10-05 整体移除 |
 | 看板 5 项聚合 | 订单总数/营收/状态分布/趋势/热销 TOP1 与主表直查逐项一致 |
 | 反向验证 | 改坏分片行 → 切读确实读到坏值，但反向对账立刻 `diff+1` 并打出两侧指纹（灰度的风险面与安全网同时被证实） |
 | `monthly` 终态 | 建单/改状态/支付回写只落分片、主表行数不变；老数据（202608 迁移分片）仍可读 |
@@ -710,7 +726,7 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 - **终态语义**（与灰度期的区别）：
   - 写：只落分片，不再镜像；
   - 读：只走分片，**不回落主表** —— 主表已停写，回落只会读到过期数据；
-  - 无 `order_no` 的 offset 分页返回 `7004`；**带 `order_no` 的列表等价于点查，仍精确**（见下）。
+  - ~~无 `order_no` 的 offset 分页返回 `7004`~~ → 2026-10-05 起 offset 分页已移除，传 `page`/`page_size` 统一报 1002；**带 `order_no` 的列表等价于点查，仍精确**（见下）。
 - ⚠️ **前置已解除**：前端订单页已改用游标分页（`gf-eshop-fe` 提交 `6398ed6`）。
   另一个前端仓库 miniprogram **目前没有订单页面**（只有 index/product），无需改动 ——
   这修正了 §2.6 原先「两个仓库都要跟进」的说法。
@@ -735,8 +751,9 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 单测原先隐式依赖开发机本地的 `manifest/config/config.yaml`：本地一切到 `monthly`，
 `TestSingleModeRoutesToBaseTable` 就失败 —— 测试结果取决于「谁的机器」。
 现在模式相关的用例都用 `gcfg.AdapterFile.Set` 在**内存里**声明自己要测的模式，
-并补了 monthly 路由矩阵、双写/灰度开关的用例；接口套件也改为**游标优先**，
-新增 3.7 覆盖「single 回落主表 / monthly 报 `7004`」两种预期，因此两种模式下都能跑。
+并补了 monthly 路由矩阵、双写/灰度开关的用例；接口套件也改为**游标优先**
+（当时新增 3.7 覆盖「single 回落主表 / monthly 报 `7004`」—— 该用例已于 2026-10-05
+随 offset 分页移除，改为断言 `page`/`page_size` 被拒绝），因此两种模式下都能跑。
 
 **实测**
 
@@ -784,7 +801,7 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
   ⚠️ `V002` 不改已存在的分片表，**旧分片要另跑一次同样的 ALTER**（迁移文件头部给了生成语句）。
 - **修完后的实测**（202610，monthly）：建单后四张表主键分别为 `…129/130/131/132`（应用生成、
   互不相同、与主表无冲突）→ `restore` 预检放行、回灌 5 行 → `verify` 4 项**校验和全对**
-  → 改回 `single` 后这张「只曾在分片里存在」的订单能从主表读到、offset 分页恢复可用。
+  → 改回 `single` 后这张「只曾在分片里存在」的订单能从主表读到、列表（当时仍是 offset 分页）恢复可用。
 
 ### Phase 6：归档旧表 ✅ 已完成
 
@@ -828,7 +845,7 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 | 归档后建新月份分片 | `--action=create --from=2026-11` 正常，新分片结构与既有分片**逐字一致** |
 | 运维工具守卫 | `restore`/`verify` 明确报「已随 Phase 6 归档」；`migrate` 先被终态守卫拦下 |
 | 清理窗口 | `purge` 预览出 4 条 DROP 语句并提示窗口最早 2026-12-01；`--force` 提前执行被拒绝 |
-| **回滚** | 执行打印出的 RENAME → 主表 2000/2000/5025 回来、归档表残留 0 → 切回 `single` 后详情/offset 分页/建单全部正常 |
+| **回滚** | 执行打印出的 RENAME → 主表 2000/2000/5025 回来、归档表残留 0 → 切回 `single` 后详情/列表/建单全部正常 |
 | 启动自检 | 归档后 monthly 下提示「符合 Phase 6 的预期状态」 |
 
 - 回滚：RENAME 回来即可（观察窗口内）；窗口过后表已删，只能从头重建（此时分片已是唯一真相源）。

@@ -527,7 +527,7 @@ brands 是 Pilot，products 才是这套方案真正兑现价值的地方：**�
 
 | 维度 | brands（100 行） | products（2025 行） |
 |------|------------------|---------------------|
-| 分页方式 | offset（`page` / `page_size`） | **游标 keyset**（`cursor` = base64(id)） |
+| 分页方式 | offset（`page` / `page_size`） | **游标 keyset**（请求 `cursor` = base64(id) + `size`，响应 `next_cursor` + `has_more`，不返回 `total`，与 orders 列表同一份契约） |
 | 排序 | **`id ASC`**（与 DB、缓存 ZSET 三路统一） | **`id DESC`**（游标分页固定倒序） |
 | 缓存分工 | 无筛选走 Redis ZSET | **类目/品牌/状态组合**走 ZSET（每个组合一个 key） |
 | 真正落 DB 的 | 全部筛选 | **只有 `name` 搜索 + 价格区间** |

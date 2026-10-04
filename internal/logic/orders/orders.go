@@ -292,6 +292,12 @@ func (s *sOrders) createOnce(
 }
 
 func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.OrdersListRes, err error) {
+	// 已移除的 offset 分页参数必须显式报错：静默忽略会让老客户端以为翻到了第 N 页，
+	// 实际每次都拿到第一页（分表后 offset 也无法跨片正确归并）。
+	if err := rejectLegacyOffsetParams(ctx); err != nil {
+		return nil, err
+	}
+
 	// 先解析时间窗口：分表之后列表必须有时间范围，否则要跨全部活跃分片 fan-out。
 	// 没传就落到默认窗口（近 N 个月），并在响应里回显，避免「怎么少了一单」。
 	window, err := resolveListWindow(ctx, req.Month, req.CreatedFrom, req.CreatedTo, gtime.Now().Time)
@@ -310,87 +316,94 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 		Window:        window,
 	}
 
-	// 传 cursor 或 size 即走游标（keyset）分页；否则保持原有的 page/page_size 行为
-	if req.Cursor != "" || req.Size > 0 {
-		return s.listByCursor(ctx, req, filter)
-	}
-
-	page := req.Page
-	size := req.PageSize
-	if page <= 0 {
-		page = 1
-	}
-	if size <= 0 {
-		size = 10
-	}
-	if size > 100 {
-		size = 100
-	}
-
-	total, err := countOrdersByFilter(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-	if total == 0 {
-		res := &v1.OrdersListRes{
-			List:  make([]*entity.Orders, 0),
-			Total: 0,
-		}
-		echoWindow(res, filter.Window)
-		return res, nil
-	}
-
-	list, err := pageOrders(ctx, filter, page, size)
-	if err != nil {
-		return nil, err
-	}
-	res = &v1.OrdersListRes{
-		List:  list,
-		Total: int(total),
-	}
-	echoWindow(res, filter.Window)
-	return res, nil
+	return s.listByCursor(ctx, req, filter)
 }
 
-// listByCursor 游标分页。与 offset 分页的三点差异：
-//   - 不做 COUNT，total 返回 -1（分表后 COUNT 要跨 36 片 fan-out，不能放进列表接口）；
+// rejectLegacyOffsetParams 拦截已移除的 page / page_size 参数。
+//
+// 列表现在只有游标分页一种形态；如果放任这两个参数被忽略，`?page=3` 会静默返回
+// 第一页，调用方却以为翻到了第 3 页 —— 这正是游标分页要避免的那类误会。
+func rejectLegacyOffsetParams(ctx context.Context) error {
+	r := g.RequestFromCtx(ctx)
+	if r == nil {
+		return nil
+	}
+	return checkLegacyOffsetParams(func(key string) bool { return r.GetQuery(key) != nil })
+}
+
+// checkLegacyOffsetParams 是上面那个守卫的纯逻辑部分（hasQuery 报告参数是否存在），
+// 抽出来是为了不依赖真实 ghttp 请求即可单测。
+func checkLegacyOffsetParams(hasQuery func(key string) bool) error {
+	for _, key := range []string{"page", "page_size"} {
+		if hasQuery(key) {
+			return errcode.Newf(errcode.CodeInvalidParams,
+				"参数 %s 已移除：订单列表只支持游标分页（size + cursor，"+
+					"上一页响应里的 next_cursor 作为下一页的 cursor）", key)
+		}
+	}
+	return nil
+}
+
+// listByCursor 游标分页，也是订单列表**唯一**的分页形态：
+//   - 不做 COUNT，因此不返回 total（分表后 COUNT 要跨 36 片 fan-out，
+//     返回 -1 这类占位值又容易被误读成「总共就这么多单」）；
 //   - 用「上一页末位 id」作为游标，深翻页不会越翻越慢；
-//   - 返回 next_cursor，为空表示没有更多。
+//   - 返回 next_cursor + has_more，两者都是「没有更多」语义，始终一致。
+//
+// 与 products 完全一致：多取一条（size+1）判定 has_more，因此末页刚好整除时
+// 不会给出一个指向空页的 next_cursor。
 func (s *sOrders) listByCursor(
 	ctx context.Context, req *v1.OrdersListReq, filter orderListFilter,
 ) (*v1.OrdersListRes, error) {
-	size := req.Size
-	if size <= 0 {
-		size = 20
-	}
-	if size > 100 {
-		size = 100
-	}
+	size := normalizeListSize(req.Size)
 
 	beforeID, err := decodeOrderCursor(req.Cursor)
 	if err != nil {
 		return nil, err
 	}
 
-	list, err := pageOrdersByCursor(ctx, filter, beforeID, size)
+	// 多取一条用于判定 has_more；分片模式下每片各取 size+1 条再归并，
+	// keyset 的正确性不受影响（全局前 N 条必在某片的局部前 N 条里）。
+	list, err := pageOrdersByCursor(ctx, filter, beforeID, size+1)
 	if err != nil {
 		return nil, err
+	}
+	hasMore := len(list) > size
+	if hasMore {
+		list = list[:size]
 	}
 	if list == nil {
 		list = make([]*entity.Orders, 0)
 	}
 
 	nextCursor := ""
-	if len(list) == size {
+	if hasMore {
 		nextCursor = encodeOrderCursor(list[len(list)-1].Id)
 	}
 	res := &v1.OrdersListRes{
 		List:       list,
-		Total:      -1, // 未统计
 		NextCursor: nextCursor,
+		HasMore:    hasMore,
 	}
 	echoWindow(res, filter.Window)
 	return res, nil
+}
+
+// 每页条数默认值与上限，与 products 列表保持一致。
+const (
+	defaultListSize = 20
+	maxListSize     = 100
+)
+
+// normalizeListSize 归一化每页条数：<=0 取默认值，超上限则截断。
+func normalizeListSize(size int) int {
+	if size <= 0 {
+		return defaultListSize
+	}
+	if size > maxListSize {
+		return maxListSize
+	}
+	return size
 }
 
 // echoWindow 把本次生效的时间窗口回显给客户端。

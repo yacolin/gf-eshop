@@ -185,7 +185,15 @@ roles/permissions 等共 40+）见 `internal/logic/`，目前未接入 ES。
   （有单测断言两者不漂移）。发布包不覆盖 `/etc/gf-eshop.env`，所以解包不影响线上配置。
 - **分页有两套，不要混用**：
   - brands / categories：`page` + `page_size`（offset，默认 page=1、pageSize=20）
-  - products：`cursor` + `size`（keyset；`cursor` = base64(id)，排序固定 `id DESC`）
+  - **products / orders（列表唯一形态）**：keyset 游标，两侧共用同一份契约 ——
+    请求 `cursor` + `size`（`cursor` = base64(十进制 id)，排序固定 `id DESC`；
+    `size` 默认 20、上限 100）；响应 `list` + `next_cursor` + `has_more`。
+    实现上都多取一条（`size+1`）判 `has_more`，末页刚好整除时不会给出指向空页的游标；
+    `next_cursor` 为空 ⟺ `has_more=false`；非法游标两侧都报参数错误（不静默当首页）。
+    **刻意不返回 `total`**：游标分页不做 COUNT（orders 分表后要跨 36 片 fan-out），
+    返回 `-1` 之类占位值会被误读成「总共就这么多」。
+    orders 原先的 `page`/`page_size` **已移除**，传了会直接报参数错误（不静默忽略，
+    否则 `?page=3` 每次返回第一页，调用方却以为翻页成功）
 - **SKU 价格变更必须同步商品索引**：索引里的 `price_min`/`price_max` 来自 SKU 聚合，
   从 `logic/skus` 改价后要调用 `service.Products().SyncSearchDoc(ctx, productId)`，
   否则价格区间筛选会用到过期数据

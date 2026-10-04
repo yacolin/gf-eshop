@@ -119,8 +119,8 @@ type ProductsCreateFullRes struct {
 type ProductsListReq struct {
 	g.Meta `path:"/products" tags:"Products" method:"get" summary:"商品列表(游标分页)"`
 
-	Size       int    `json:"size"        description:"每页条数(默认10,最大100)"`
-	Cursor     string `json:"cursor"      description:"游标(首次不传,后续使用返回的cursor)"`
+	Size       int    `json:"size"        description:"每页条数(默认20,最大100)"`
+	Cursor     string `json:"cursor"      description:"游标：base64(上一页末位商品ID)，排序固定 id DESC。首次不传，后续传上一页的 next_cursor"`
 	Name       string `json:"name"`
 	CategoryId int64  `json:"category_id"`
 	BrandId    int64  `json:"brand_id"`
@@ -135,10 +135,15 @@ type ProductsListItem struct {
 	TotalStock int64 `json:"total_stock" description:"总库存（可售）"`
 }
 
+// ProductsListRes 游标分页响应。字段与 orders 列表完全一致：
+// list + next_cursor + has_more，便于前端复用同一套翻页逻辑。
+//
+// 刻意**不返回 total**：游标分页不做 COUNT，返回 -1 之类的占位值容易被误解成
+// 「总共就这么多商品」。
 type ProductsListRes struct {
-	List    []*ProductsListItem `json:"list"`
-	Cursor  string              `json:"cursor"`
-	HasMore bool                `json:"has_more"`
+	List       []*ProductsListItem `json:"list"`
+	NextCursor string              `json:"next_cursor,omitempty" description:"下一页游标；为空表示没有更多"`
+	HasMore    bool                `json:"has_more"              description:"是否还有下一页（多取一条判定，末页不会误报）"`
 }
 
 type ProductsDetailReq struct {

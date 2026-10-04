@@ -112,10 +112,10 @@ func TestSingleModeRoutesToBaseTable(t *testing.T) {
 		t.Fatalf("single 模式下非法单号不应报错，实际 shard=%q err=%v", sh.suffix, err)
 	}
 
-	// offset 分页（page/page_size）：single 模式下回落主表且不报错
+	// single 模式下列表读源回落主表且不报错
 	src, err := resolveListSource(ctx, orderListFilter{})
 	if err != nil || !src.Main {
-		t.Fatalf("single 模式下 offset 分页应回落主表，实际 %+v err=%v", src, err)
+		t.Fatalf("single 模式下列表应回落主表，实际 %+v err=%v", src, err)
 	}
 
 	// 未配置灰度时，点查与列表都不走分片
@@ -205,8 +205,7 @@ func TestMonthlyModeRouting(t *testing.T) {
 	if err != nil || len(src.Shards) != 1 || src.Shards[0].suffix != "202608" {
 		t.Errorf("monthly 下带 order_no 应路由到 202608，实际 %+v err=%v", src, err)
 	}
-	// 注：monthly 下「不带 order_no 的 offset 分页报 7004」「带 month 落在单分片则精确」
-	// 需要真实分片表，放在 tests/test_tx_api.py 的 3.7/3.8 覆盖
+	// 注：monthly 下的跨片游标归并需要真实分片表，放在 tests/test_tx_api.py 的 3.4~3.9 覆盖
 }
 
 // TestDualWriteAndGraySwitches 锁定双写与读灰度的开关语义（single 模式）。
