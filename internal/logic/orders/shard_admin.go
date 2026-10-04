@@ -219,6 +219,14 @@ type MonthMigration struct {
 // MigrateShards 把 [from, to] 的历史数据从主表复制进对应月份的分片表。
 // batch 是单批行数（<=0 时取 5000），按主键区间推进，避免大事务与主从延迟。
 func MigrateShards(ctx context.Context, from, to string, batch int) (*MigrationReport, error) {
+	// 切到 monthly 之后主表已经停写，migrate 是「以主表为准覆盖分片」——
+	// 再跑一次就会用冻结的旧快照把分片里的新数据冲掉。这是不可逆的数据损坏，
+	// 因此在终态下直接拒绝（要回灌请先把 mode 改回 single 并明确这是回滚动作）。
+	if shardMode(ctx) == shardModeMonthly {
+		return nil, errcode.Newf(errcode.CodeShardMaintenanceRefused,
+			"orderShard.mode=monthly 时禁止执行 migrate：主表已停写，"+
+				"迁移方向是「主表 → 分片」，重跑会把分片里的新数据覆盖成过期快照")
+	}
 	if batch <= 0 {
 		batch = 5000
 	}
@@ -361,6 +369,13 @@ type VerifyCheck struct {
 // VerifyShards 对 [from, to] 的每个分片做三重对账：行数、金额合计、全字段校验和。
 // 行数相同但内容不同是最危险的迁移事故，所以一定要比全字段校验和。
 func VerifyShards(ctx context.Context, from, to string) (*VerificationReport, error) {
+	// 对账是只读的，终态下仍然放行，但要讲清楚：主表已停写，
+	// 切换之后发生的状态变更只会落在分片，因此「主表 vs 分片」出现差异是**预期**的，
+	// 不代表数据损坏。它此时的价值是「看一眼有哪些行在切换后被改过」。
+	if shardMode(ctx) == shardModeMonthly {
+		g.Log().Warningf(ctx,
+			"orderShard.mode=monthly：主表已停写，本次对账的差异包含「切换分片后被改过的行」，属预期现象")
+	}
 	spans, err := parseMonthSpans(from, to)
 	if err != nil {
 		return nil, err
@@ -551,4 +566,3 @@ func EnsureDailyStatsTable(ctx context.Context) error {
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单日汇总（看板数据源）'`)
 	return err
 }
-

@@ -234,16 +234,16 @@ func (s *sOrders) createOnce(
 		// tx_after_sales.order_item_id 都引用 tx_order_items.id，分表后也必须全局唯一。
 		for i, item := range items {
 			err = insertOrderItem(ctx, sh, g.Map{
-				"id":               idn.ItemIDs[i],
-				"sub_order_id":     subOrderId,
-				"order_id":         orderId,
-				"order_no":         orderNo,
-				"sub_order_no":     subOrderNo,
-				"merchant_id":      0,
-				"sku_id":           item.SkuId,
-				"product_id":       item.ProductId,
-				"sku_code":         item.SkuCode,
-				"product_name":     item.ProductName,
+				"id":           idn.ItemIDs[i],
+				"sub_order_id": subOrderId,
+				"order_id":     orderId,
+				"order_no":     orderNo,
+				"sub_order_no": subOrderNo,
+				"merchant_id":  0,
+				"sku_id":       item.SkuId,
+				"product_id":   item.ProductId,
+				"sku_code":     item.SkuCode,
+				"product_name": item.ProductName,
 				// 规格摘要写 varchar 列 sku_spec_summary；sku_spec 是 JSON 列，
 				// 过去把这段纯文本写进去会直接 Error 3140（roadmap §2.5）。
 				// 结构化快照（{"颜色":"红"}）目前没有数据源，留 NULL。

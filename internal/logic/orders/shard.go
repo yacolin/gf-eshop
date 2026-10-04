@@ -90,7 +90,7 @@ func shardMode(ctx context.Context) string {
 	case shardModeSingle:
 		return shardModeSingle
 	case shardModeMonthly:
-		warnMonthlyNotReady(ctx)
+		warnMonthlyMode(ctx)
 		return shardModeMonthly
 	default:
 		shardWarnOnce.Do(func() {
@@ -101,13 +101,17 @@ func shardMode(ctx context.Context) string {
 	}
 }
 
-// warnMonthlyNotReady 在 monthly 模式下给出一次性告警：跨片能力尚未实现。
-func warnMonthlyNotReady(ctx context.Context) {
+// warnMonthlyMode 在 monthly 模式下给出一次性提示（Phase 4/5 之后语义已确定）。
+//
+// 这里说的都是**当前真实行为**，不再是「尚未实现」：跨片列表与看板已经可用，
+// 仍然会失败的是「没有 order_no 的 offset 分页」，运维动作里被禁的是 migrate。
+func warnMonthlyMode(ctx context.Context) {
 	shardWarnOnce.Do(func() {
 		g.Log().Warningf(ctx,
-			"orderShard.mode=monthly：分片读写尚在 Phase 2~4 落地中，"+
-				"当前只有「按单号/按创建时间」可正确路由，"+
-				"列表与看板聚合会返回 %d；详见 docs/order-sharding-design.md",
+			"orderShard.mode=monthly：写只落分片、读只走分片（主表已停写，分片读**不回落**主表）。"+
+				"列表请用游标分页（无 order_no 的 offset 分页返回 %d）；"+
+				"migrate 已被禁止（会拿过期主表覆盖分片）；"+
+				"详见 docs/order-sharding-design.md §7 Phase 4/5",
 			errcode.CodeOrderShardNotReady)
 	})
 }

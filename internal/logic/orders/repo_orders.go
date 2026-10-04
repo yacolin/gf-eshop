@@ -124,7 +124,7 @@ type orderListFilter struct {
 // 只服务于 offset 分页（page/page_size）的 total，因此与 pageOrders 一样只在主表上做：
 // 分片模式下 offset 分页本身无法正确跨片归并（见 offsetListShard）。
 func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) {
-	sh, err := offsetListShard(ctx)
+	sh, err := offsetListShard(ctx, f)
 	if err != nil {
 		return 0, err
 	}
@@ -135,15 +135,30 @@ func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) 
 	return int64(n), nil
 }
 
+// listShardForPointLookup 列表条件里带了 order_no 时，它其实等价于点查：
+// 直接定位到那一个月，单分片内的 offset / keyset 都精确，不需要跨片归并。
+// 返回 false 表示这不是点查（或当前模式仍应读主表）。
+func listShardForPointLookup(ctx context.Context, f orderListFilter) (shard, bool) {
+	if f.OrderNo == "" || shardMode(ctx) != shardModeMonthly {
+		return shard{}, false
+	}
+	return shardOfOrderNo(f.OrderNo)
+}
+
 // offsetListShard 决定 offset 分页（page/page_size）读哪里。
 //
 // offset 分页在分片下无法正确归并（每片各取 offset 再合并是错的），所以：
+//   - 带 order_no 的查询等价于点查 → 直接路由到那一个月，精确；
 //   - 主表仍是真相源（single）：回落主表并计数，保证灰度期间老客户端不受影响；
 //   - monthly（主表已停写）：回落只会读到过期数据 → 明确报错，提示改用游标分页。
-func offsetListShard(ctx context.Context) (shard, error) {
+func offsetListShard(ctx context.Context, f orderListFilter) (shard, error) {
+	if sh, ok := listShardForPointLookup(ctx, f); ok {
+		return sh, nil
+	}
 	if shardMode(ctx) == shardModeMonthly {
 		return shard{}, errcode.Newf(errcode.CodeOrderShardNotReady,
-			"offset 分页在分片模式下无法正确跨片归并，请改用游标分页（cursor + size）")
+			"offset 分页在分片模式下无法正确跨片归并，请改用游标分页（cursor + size）；"+
+				"若已知订单号，直接带 order_no 查询即可精确定位")
 	}
 	if readShardsForList(ctx) {
 		shardFallbackCounter(ctx, "list_offset")
@@ -153,7 +168,7 @@ func offsetListShard(ctx context.Context) (shard, error) {
 
 // pageOrders 按筛选条件 offset 分页查询订单（固定 id 倒序）。
 func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*entity.Orders, error) {
-	sh, err := offsetListShard(ctx)
+	sh, err := offsetListShard(ctx, f)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +180,10 @@ func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*enti
 // 分片模式下每片各取一页再按 id 归并即可 —— keyset 的正确性来自「全局前 N 条
 // 必然出现在某片的局部前 N 条里」，所以每片取 size 条就够了，不需要取全量。
 func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, size int) ([]*entity.Orders, error) {
+	// 带 order_no 的查询等价于点查，不必跨片
+	if sh, ok := listShardForPointLookup(ctx, f); ok {
+		return listOrdersPage(ctx, sh, f, 0, size, beforeID)
+	}
 	if !readShardsForList(ctx) {
 		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
 	}
@@ -444,7 +463,6 @@ func orderStatusDistribution(ctx context.Context) ([]orderStatusCountRow, error)
 	sort.Slice(out, func(i, j int) bool { return out[i].Status < out[j].Status })
 	return out, nil
 }
-
 
 // ── 供跨模块调用的复合写入 ────────────────────────────────────────────────
 

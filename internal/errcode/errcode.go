@@ -39,24 +39,24 @@ func Code(n int) gcode.Code {
 // ============================================================================
 
 const (
-	CodeInvalidParams       = 1002
-	CodeUnauthorized        = 1004
-	CodeUserNotFound        = 1005
-	CodeOrderNotFound       = 1006
-	CodePaymentFailed       = 1008
-	CodeInvalidCredentials  = 1009
-	CodeNotFound            = 1010
-	CodeAccountDisabled     = 1011
-	CodeInvalidToken        = 1016
-	CodeInsufficientStock   = 1024
-	CodePermissionNotFound  = 2001
+	CodeInvalidParams           = 1002
+	CodeUnauthorized            = 1004
+	CodeUserNotFound            = 1005
+	CodeOrderNotFound           = 1006
+	CodePaymentFailed           = 1008
+	CodeInvalidCredentials      = 1009
+	CodeNotFound                = 1010
+	CodeAccountDisabled         = 1011
+	CodeInvalidToken            = 1016
+	CodeInsufficientStock       = 1024
+	CodePermissionNotFound      = 2001
 	CodeInsufficientPermissions = 2002
 	CodeCannotModifySystemRole  = 2003
 	CodeCannotDeleteSystemRole  = 2004
 	CodeRoleNotFound            = 2005
-	CodeAddressNotFound    = 1012
-	CodeAddressLimit       = 1013
-	CodeUsernameExists     = 1014
+	CodeAddressNotFound         = 1012
+	CodeAddressLimit            = 1013
+	CodeUsernameExists          = 1014
 
 	// 验证码域 1017-1023（渠道无关：email / sms 共用同一批码值）
 	CodeVerifyCodeInvalid        = 1017
@@ -67,38 +67,41 @@ const (
 	CodeVerifySendFailed         = 1022
 	CodeEmailAlreadyExists       = 1023
 
-	CodeBrandNotFound       = 4001
-	CodeCategoryNotFound    = 4010
-	CodeAttributeNotFound   = 4020
-	CodeAttributeValueNotFound = 4021
-	CodeProductNotFound     = 4030
-	CodeSKUNotFound              = 4031
-	CodeProductVersionNotFound   = 4032
-	CodeProductDescriptionNotFound = 4033
-	CodeInventoryNotFound   = 5001
-	CodeInvalidStockChange   = 5003
-	CodeInventoryLogNotFound = 5005
-	CodePaymentNotFound      = 6001
-	CodeCartNotFound          = 8001
-	CodeRefundNotFound      = 6010
-	CodeRefundFailed        = 6011
+	CodeBrandNotFound                = 4001
+	CodeCategoryNotFound             = 4010
+	CodeAttributeNotFound            = 4020
+	CodeAttributeValueNotFound       = 4021
+	CodeProductNotFound              = 4030
+	CodeSKUNotFound                  = 4031
+	CodeProductVersionNotFound       = 4032
+	CodeProductDescriptionNotFound   = 4033
+	CodeInventoryNotFound            = 5001
+	CodeInvalidStockChange           = 5003
+	CodeInventoryLogNotFound         = 5005
+	CodePaymentNotFound              = 6001
+	CodeCartNotFound                 = 8001
+	CodeRefundNotFound               = 6010
+	CodeRefundFailed                 = 6011
 	CodeNotificationNotFound         = 9001
 	CodeNotificationTemplateNotFound = 9002
 	CodeInvalidOrderStatus           = 7002
-	CodeOrderItemNotFound   = 7003
+	CodeOrderItemNotFound            = 7003
 	// CodeOrderShardNotReady 订单分表已开启，但该查询所需的跨片能力还没实现。
 	// 宁可明确报错，也不要静默回落主表读到过期数据。见 docs/order-sharding-design.md §7。
 	CodeOrderShardNotReady = 7004
 	// CodeOrderNoAllocateFailed 订单号/主键的序列分配失败（序列用尽或生成器异常）。
 	CodeOrderNoAllocateFailed = 7005
+	// CodeShardMaintenanceRefused 当前模式下不允许执行这个分表运维动作。
+	// 典型场景：切到 monthly（主表停写）后再跑 migrate —— 那会拿冻结的旧快照覆盖分片。
+	CodeShardMaintenanceRefused = 7006
 
-	CodeMerchantsNotFound           = 10001
-	CodeMerchantBankAccountNotFound  = 10002
-	CodeMerchantContactNotFound      = 10003
+	CodeMerchantsNotFound             = 10001
+	CodeMerchantBankAccountNotFound   = 10002
+	CodeMerchantContactNotFound       = 10003
 	CodeMerchantQualificationNotFound = 10004
-	CodeMerchantWithdrawalNotFound   = 10005
-	CodeReviewNotFound              = 10006
-	CodeDepartmentNotFound          = 11001
+	CodeMerchantWithdrawalNotFound    = 10005
+	CodeReviewNotFound                = 10006
+	CodeDepartmentNotFound            = 11001
 )
 
 // ============================================================================
@@ -106,11 +109,11 @@ const (
 // ============================================================================
 
 var (
-	ErrInvalidParams        = New(CodeInvalidParams, "参数错误")
-	ErrUnauthorized         = New(CodeUnauthorized, "未授权，请先登录")
-	ErrUserNotFound         = New(CodeUserNotFound, "用户不存在")
-	ErrAddressNotFound      = New(CodeAddressNotFound, "地址不存在")
-	ErrAddressLimit         = New(CodeAddressLimit, "地址数量已达上限")
+	ErrInvalidParams         = New(CodeInvalidParams, "参数错误")
+	ErrUnauthorized          = New(CodeUnauthorized, "未授权，请先登录")
+	ErrUserNotFound          = New(CodeUserNotFound, "用户不存在")
+	ErrAddressNotFound       = New(CodeAddressNotFound, "地址不存在")
+	ErrAddressLimit          = New(CodeAddressLimit, "地址数量已达上限")
 	ErrUsernameAlreadyExists = New(CodeUsernameExists, "用户名已存在")
 
 	// 验证码（渠道无关）。1021/1022 的文案由调用方按渠道补全，
@@ -122,13 +125,13 @@ var (
 	ErrVerifyChannelNotReady    = New(CodeVerifyChannelNotReady, "验证码服务未启用或配置不完整，请联系管理员")
 	ErrVerifySendFailed         = New(CodeVerifySendFailed, "验证码发送失败，请稍后重试")
 	ErrEmailAlreadyExists       = New(CodeEmailAlreadyExists, "该邮箱已被绑定")
-	ErrOrderNotFound       = New(CodeOrderNotFound, "订单不存在")
-	ErrPaymentFailed       = New(CodePaymentFailed, "支付失败")
-	ErrInvalidCredentials  = New(CodeInvalidCredentials, "用户名或密码错误")
-	ErrNotFound            = New(CodeNotFound, "资源不存在")
-	ErrAccountDisabled     = New(CodeAccountDisabled, "账号已被禁用")
-	ErrInvalidToken        = New(CodeInvalidToken, "Token 无效或已过期")
-	ErrInsufficientStock   = New(CodeInsufficientStock, "库存不足")
+	ErrOrderNotFound            = New(CodeOrderNotFound, "订单不存在")
+	ErrPaymentFailed            = New(CodePaymentFailed, "支付失败")
+	ErrInvalidCredentials       = New(CodeInvalidCredentials, "用户名或密码错误")
+	ErrNotFound                 = New(CodeNotFound, "资源不存在")
+	ErrAccountDisabled          = New(CodeAccountDisabled, "账号已被禁用")
+	ErrInvalidToken             = New(CodeInvalidToken, "Token 无效或已过期")
+	ErrInsufficientStock        = New(CodeInsufficientStock, "库存不足")
 )
 
 // ============================================================================
@@ -148,13 +151,13 @@ var (
 // ============================================================================
 
 var (
-	ErrBrandNotFound    = New(CodeBrandNotFound, "品牌不存在")
-	ErrCategoryNotFound = New(CodeCategoryNotFound, "类目不存在")
-	ErrAttributeNotFound = New(CodeAttributeNotFound, "属性不存在")
-	ErrAttributeValueNotFound = New(CodeAttributeValueNotFound, "属性值不存在")
-	ErrProductNotFound           = New(CodeProductNotFound, "产品不存在")
-	ErrSKUNotFound               = New(CodeSKUNotFound, "SKU 不存在")
-	ErrProductVersionNotFound    = New(CodeProductVersionNotFound, "商品版本不存在")
+	ErrBrandNotFound              = New(CodeBrandNotFound, "品牌不存在")
+	ErrCategoryNotFound           = New(CodeCategoryNotFound, "类目不存在")
+	ErrAttributeNotFound          = New(CodeAttributeNotFound, "属性不存在")
+	ErrAttributeValueNotFound     = New(CodeAttributeValueNotFound, "属性值不存在")
+	ErrProductNotFound            = New(CodeProductNotFound, "产品不存在")
+	ErrSKUNotFound                = New(CodeSKUNotFound, "SKU 不存在")
+	ErrProductVersionNotFound     = New(CodeProductVersionNotFound, "商品版本不存在")
 	ErrProductDescriptionNotFound = New(CodeProductDescriptionNotFound, "商品描述不存在")
 )
 
@@ -163,8 +166,8 @@ var (
 // ============================================================================
 
 var (
-	ErrInventoryNotFound  = New(CodeInventoryNotFound, "库存记录不存在")
-	ErrInvalidStockChange  = New(CodeInvalidStockChange, "无效的库存变动")
+	ErrInventoryNotFound    = New(CodeInventoryNotFound, "库存记录不存在")
+	ErrInvalidStockChange   = New(CodeInvalidStockChange, "无效的库存变动")
 	ErrInventoryLogNotFound = New(CodeInventoryLogNotFound, "库存日志不存在")
 )
 
@@ -204,17 +207,16 @@ var (
 	ErrNotificationTemplateNotFound = New(CodeNotificationTemplateNotFound, "通知模板不存在")
 )
 
-
 // ============================================================================
 // 错误码：商家域 10001-10099
 // ============================================================================
 
 var (
-	ErrMerchantsNotFound            = New(CodeMerchantsNotFound, "商家不存在")
-	ErrMerchantBankAccountNotFound  = New(CodeMerchantBankAccountNotFound, "银行账户不存在")
-	ErrMerchantContactNotFound      = New(CodeMerchantContactNotFound, "联系人不存在")
+	ErrMerchantsNotFound             = New(CodeMerchantsNotFound, "商家不存在")
+	ErrMerchantBankAccountNotFound   = New(CodeMerchantBankAccountNotFound, "银行账户不存在")
+	ErrMerchantContactNotFound       = New(CodeMerchantContactNotFound, "联系人不存在")
 	ErrMerchantQualificationNotFound = New(CodeMerchantQualificationNotFound, "资质不存在")
-	ErrMerchantWithdrawalNotFound   = New(CodeMerchantWithdrawalNotFound, "提现记录不存在")
-	ErrReviewNotFound               = New(CodeReviewNotFound, "评价不存在")
-	ErrDepartmentNotFound           = New(CodeDepartmentNotFound, "部门不存在")
+	ErrMerchantWithdrawalNotFound    = New(CodeMerchantWithdrawalNotFound, "提现记录不存在")
+	ErrReviewNotFound                = New(CodeReviewNotFound, "评价不存在")
+	ErrDepartmentNotFound            = New(CodeDepartmentNotFound, "部门不存在")
 )
