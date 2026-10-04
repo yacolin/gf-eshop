@@ -112,6 +112,38 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 - **风险**：单节点故障时全部筛选查询回落 MySQL，MySQL 将独自承受全部并发
 - **方向**：生产环境至少双节点 + 副本；容量按 6.6k RPS 预留余量
 
+### 4.5 WebSocket 同账号多端互踢，前端反复断线重连
+
+| 项 | 内容 |
+|----|------|
+| **现象** | 两台电脑用**同一个 admin 账号**同时连 WebSocket，两端反复断线重连、永不收敛 |
+| **根因** | `internal/ws/hub.go:51-62` `handleRegister`：新连接注册时遍历该 userID 下所有旧连接，执行 `old.closed = true; close(old.Send); old.Conn.Close()`，随后把 `h.clients[userID]` 整体替换成「只含新连接」的 map —— 即强制单用户单连接 |
+| **为什么是「反复」** | 踢人是**静默硬断**：`WritePump`（`internal/ws/client.go:74-79`）在 `Send` 被关闭时确实会补发 close 帧，但 payload 为空（**无 code、无 reason**），且 hub 紧接着 `Conn.Close()` 与之存在竞争，客户端有时只看到连接断开。两种情况下前端都无法区分「被顶替」与「网络抖动」，于是照常自动重连；重连又去踢对方 → 互踢死循环。**这才是"反复"的机制，不是连接不稳定** |
+| **影响面** | ① 同一账号多端（两台电脑 / 浏览器 + 小程序）必然互踢；② 被踢的旧连接不经过 `handleUnregister`，其 `UpdateLastSeq`、离线事件、在线统计都不会为它更新；③ 会话状态**按用户**存（`internal/ws/session.go` 的 `ws:session:<userID>`，只有一个 `LastSeq`/`ReconnectCount`），而内存里 `Client.LastSeq`（`client.go:23`）是按连接的 —— 真要多设备，恢复位点必须改成按连接/设备维度，否则两端互相覆盖 `last_seq`、重连补发错乱 |
+| **临时绕过** | 两个电脑用不同账号登录（当前可用） |
+| **验证方式** | 同一账号两个客户端同时连：① 是否仍互踢；② 被顶替端是否收到明确提示且**不再自动重连**；③ `GET /api/v1/ws/stats` 的 `connections` 是否为 2；④ 多设备各自断开重连后 `last_seq` 补发是否正确 |
+| **部署依赖** | 服务器上无 Go 源码，改完必须走「本地交叉编译 + 上传」链路（见 [`deploy/INSTALL.md`](../deploy/INSTALL.md)）；前端两端（`gf-eshop-fe`、`gf-eshop-miniprogram`）需同步处理 |
+
+**方案（建议先做 B 止血，再评估 A 作为终态）**
+
+- **A. 支持多设备并发（终态推荐）**：删掉 `handleRegister` 里 53-59 行的踢人分支，
+  注册时改为 `h.clients[userID][client] = true`，而不是把 map 重置成只含新连接的。
+  好消息是**数据结构本身已支持多连接** —— `clients` 就是 `map[int64]map[*Client]bool` 集合，
+  `SendToUser` / `snapshotUserClients` / `GetOnlineCount` 都按集合遍历，广播侧不用改。
+  **真正的工作量在会话状态**：`ws:session:<userID>` 目前只有一个 `LastSeq`，
+  需改成按连接/设备存（例如 `ws:session:<userID>:<connID>`，或复用 JWT 里的 `TokenId`）。
+  这一点如果漏了，会出现「A 端把 B 端的恢复位点覆盖掉」这类难查的补发错乱。
+- **B. 保持单连接 + 被顶替通知（成本低、立刻止血）**：踢之前先给旧连接发一条业务消息
+  （如新消息类型 `type: "kicked"`，payload 带 reason），并带自定义 code（如 4001）的 close 帧
+  **优雅关闭**（先发完再关，不要 `close(Send)` 与 `Conn.Close()` 同时做）；
+  前端收到该 code **不自动重连**，改为提示「账号已在其他设备登录」。
+  这一步就能消掉互踢死循环，且不动会话模型。现有消息类型只有
+  `stats/user/welcome/sync_required/notification/pong`（`internal/ws/message.go`），需新增一种。
+- **C. 临时绕过**：不同账号登录（不入代码）。
+
+> 决策提示：如果预期「多个运营共用同一 admin 账号同时在线」是常态，A 应升到 §二 高优先级；
+> 如果只是本机双开测试图的方便，B 足够且代价最小。
+
 ---
 
 ## 五、低成本优化（顺手可做）
