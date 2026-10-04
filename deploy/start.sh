@@ -23,8 +23,11 @@ if [ ! -f "$CONF" ]; then
   exit 1
 fi
 
-# 可选：环境变量文件。当前所有配置都在 yaml 里，这里只作为以后调优/覆盖的入口，
-# 例如给小内存机器设 GOMEMLIMIT / GOGC。
+# 环境变量文件：这里的变量会**覆盖 manifest/config/config.yaml 的同名配置**
+# （命名规则见 deploy/env.example：配置键 → 大写蛇形）。
+# 为什么必须在这里 source：systemd 不会读 ~/.bashrc，而解包会覆盖 yaml，
+# 所以线上真实配置（DB 密码、JWT 密钥…）只放在 /etc/gf-eshop.env（600）。
+# 也可以用它给小内存机器设 GOMEMLIMIT / GOGC。
 for f in "${GFESHOP_ENV_FILE:-}" /etc/gf-eshop.env; do
   if [ -n "$f" ] && [ -f "$f" ]; then
     set -a

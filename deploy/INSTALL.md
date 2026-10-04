@@ -220,6 +220,42 @@ sudo chmod 600 /opt/gf-eshop/manifest/config/config.yaml   # 含密钥，别留 
 > 配置是**按工作目录**找的（`manifest/config/config.yaml`），所以必须用 `start.sh` 启动，
 > 或保证 systemd 的 `WorkingDirectory=/opt/gf-eshop`。
 
+### 5.3 推荐：把线上配置放 `/etc/gf-eshop.env`（而不是改 yaml）
+
+> **为什么**：发布包里的 `manifest/config/config.yaml` 是**打包机上的本地文件**
+> （含开发库密码、邮箱授权码），而且**每次解包都会覆盖服务器上那一份**。
+> 所以线上的真实值应该只放在 `/etc/gf-eshop.env`（600），
+> 由 `start.sh` 与 systemd 注入进程环境，**运行期覆盖** yaml 的同名配置 —— 解包不再影响它。
+
+```bash
+sudo cp /opt/gf-eshop/env.example /etc/gf-eshop.env
+sudo chmod 600 /etc/gf-eshop.env
+sudo vi /etc/gf-eshop.env          # 填 DB 密码、JWT 密钥等
+sudo systemctl restart gf-eshop
+```
+
+命名规则：**配置键 → 大写蛇形，`.` 与驼峰边界都变成 `_`**，大小写不敏感：
+
+| 配置键（yaml） | 环境变量 |
+|---|---|
+| `server.address` | `SERVER_ADDRESS` |
+| `database.default.link` | `DATABASE_DEFAULT_LINK`（整条 DSN，别省 `parseTime=True`） |
+| `jwt.secret` | `JWT_SECRET` |
+| `elasticsearch.enabled` | `ELASTICSEARCH_ENABLED` |
+| `elasticsearch.addresses` | `ELASTICSEARCH_ADDRESSES`（逗号分隔） |
+| `orderShard.mode` | `ORDER_SHARD_MODE` |
+| `orderShard.defaultWindowMonths` | `ORDER_SHARD_DEFAULT_WINDOW_MONTHS` |
+
+语义与坑：
+
+- **注释掉 = 用 yaml 里的默认值**（不是「关」）；设置成**空串也算设置**（可用来显式清空）；
+- 可覆盖项是**显式清单**（`internal/cmd/envconfig.go` 的 `EnvOverridableKeys`）——
+  不是任意环境变量都能改配置；清单与 `env.example` 的一致性有单测兜着；
+- 语法：`KEY=value`，**不要写 `export`**，**注释必须单独占一行**
+  （systemd 不认行内 `#`，会把注释当成值的一部分）；
+- 启动日志会打印「环境变量覆盖了 N 项配置：…」（只列键名，**不打值**，避免泄密）；
+- 没配 env 文件也能跑：全用 yaml 的值。
+
 ## 6. 装 systemd 并启动
 
 ```bash
@@ -254,9 +290,10 @@ sudo chmod 600 /opt/gf-eshop/manifest/config/config.yaml    # 解包会重置权
 sudo systemctl restart gf-eshop
 ```
 
-> ⚠️ 解包会**覆盖** `manifest/config/config.yaml`。若你已在服务器上改过配置（DB 密码、
-> JWT secret 等），解包前先备份，或解包后从备份里把配置挪回来：
-> `sudo cp /opt/gf-eshop/manifest/config/config.yaml /root/gf-eshop-config.bak`（解包前）。
+> ⚠️ 解包会**覆盖** `manifest/config/config.yaml`。因此**不要把线上配置改在 yaml 里** ——
+> 按 §5.3 放到 `/etc/gf-eshop.env`，解包就不影响它（env 在运行期覆盖 yaml）。
+> 如果你确实改过 yaml，解包前先备份：`sudo cp .../config.yaml /root/gf-eshop-config.bak`。
+> 新版本可能新增可覆盖项，用 `env.example` 对照补齐（缺的项回落到 yaml 默认值）。
 
 ES 索引无需手动重建：启动时的对账自愈会按「结构版本 / 文档数」自动重建
 （改过 mapping 会因 schema 版本变化触发，见 `internal/logic/brands/es.go`）。

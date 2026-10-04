@@ -176,6 +176,13 @@ roles/permissions 等共 40+）见 `internal/logic/`，目前未接入 ES。
   不支持自定义 entity 模板），所以由响应中间件统一格式化：
   `internal/middleware/time_millis.go`。它只重写含 `gtime` 的子树，
   其余一律交回 `encoding/json`，因此**不含时间的响应逐字节不变**。
+- **配置分两层**：`manifest/config/config.yaml`（打包机上的本地文件，gitignore）提供默认值；
+  服务器真实值放 `/etc/gf-eshop.env`，由 `start.sh`/systemd 注入进程环境，
+  启动时经 `internal/cmd/envconfig.go` **覆盖** yaml 同名项
+  （命名规则：配置键 → 大写蛇形，`.` 与驼峰边界都变 `_`，如
+  `orderShard.defaultWindowMonths` → `ORDER_SHARD_DEFAULT_WINDOW_MONTHS`）。
+  **新增可覆盖项时**：在 `EnvOverridableKeys` 加一行 + 在 `deploy/env.example` 加一条
+  （有单测断言两者不漂移）。发布包不覆盖 `/etc/gf-eshop.env`，所以解包不影响线上配置。
 - **分页有两套，不要混用**：
   - brands / categories：`page` + `page_size`（offset，默认 page=1、pageSize=20）
   - products：`cursor` + `size`（keyset；`cursor` = base64(id)，排序固定 `id DESC`）

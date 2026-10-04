@@ -84,6 +84,13 @@ var (
 		Usage: "main",
 		Brief: "start http server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
+				// 服务器上的真实配置在 /etc/gf-eshop.env（由 deploy/start.sh 与 systemd 注入进程环境），
+				// 这里覆盖到 manifest/config/config.yaml —— 必须早于任何读配置的动作，
+				// 否则 DB/Redis/ES 会先拿着 yaml 里的（打包机上的）值初始化。见 envconfig.go。
+				if applied := ApplyEnvOverrides(ctx, nil); len(applied) > 0 {
+					g.Log().Infof(ctx, "环境变量覆盖了 %d 项配置：%s", len(applied), strings.Join(applied, ", "))
+				}
+
 				// 启动时缓存预热（并行管线）
 				pipeline := productsLogic.NewWarmupPipeline(
 					productsLogic.NewFuncStage("brands", func(ctx context.Context) (int, error) {

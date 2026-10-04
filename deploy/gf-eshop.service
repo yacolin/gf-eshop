@@ -26,6 +26,9 @@ MemoryHigh=448M
 
 # Go 软内存上限：接近 420MB 时让 GC 更积极，而不是直接被 cgroup OOM kill。
 # 比 MemoryMax 低一档是刻意的（GOMEMLIMIT 覆盖 Go 运行时全部内存）。
+# 线上真实配置（DB 密码 / JWT 密钥等）放在这里；文件不存在也不影响启动（- 前缀）
+# 注意：EnvironmentFile 里的注释必须单独占一行，且不要写 export（见 deploy/env.example）
+EnvironmentFile=-/etc/gf-eshop.env
 Environment=GOMEMLIMIT=400MiB
 
 StandardOutput=journal

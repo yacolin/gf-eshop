@@ -62,7 +62,7 @@ release: ## 交叉编译并打包部署包（默认 linux/amd64，产物 bin/*.t
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -o $(RELEASE_BIN) .
 	@cp $(RELEASE_BIN) $(RELEASE_STAGE)/gf-eshop
 	@cp manifest/config/config.yaml $(RELEASE_STAGE)/manifest/config/config.yaml
-	@cp deploy/start.sh deploy/es-watch.sh deploy/gf-eshop.service deploy/INSTALL.md $(RELEASE_STAGE)/
+	@cp deploy/start.sh deploy/es-watch.sh deploy/gf-eshop.service deploy/INSTALL.md deploy/env.example $(RELEASE_STAGE)/
 	@mkdir -p $(RELEASE_STAGE)/db
 	@if [ -f $(SCHEMA_SQL) ]; then cp $(SCHEMA_SQL) $(RELEASE_STAGE)/db/schema.sql; \
 		echo "  已内置 db/schema.sql（首次部署建库用）"; \
@@ -78,7 +78,8 @@ release: ## 交叉编译并打包部署包（默认 linux/amd64，产物 bin/*.t
 	@echo "  sha256: $$(shasum -a 256 $(ARTIFACT) | cut -d' ' -f1)"
 	@go version -m $(RELEASE_BIN) 2>/dev/null | grep -E 'vcs\.(revision|modified)' | sed 's/^/  /' || true
 	@echo "  内含: gf-eshop 二进制 + manifest/config/config.yaml(600)"
-	@echo "        + start.sh + es-watch.sh + gf-eshop.service + INSTALL.md + db/schema.sql(如有)"
+	@echo "        + start.sh + es-watch.sh + gf-eshop.service + INSTALL.md + env.example + db/schema.sql(如有)"
+	@echo "  配置: 服务器真实配置放 /etc/gf-eshop.env（参考 env.example），它会覆盖 config.yaml 同名项"
 
 upload: ## 上传部署包（需 DEPLOY_HOST，如 make upload DEPLOY_HOST=root@1.2.3.4）
 	@[ -n "$(DEPLOY_HOST)" ] || { echo "缺少 DEPLOY_HOST。用法：make upload DEPLOY_HOST=root@1.2.3.4 [DEPLOY_DIR=/tmp]"; exit 1; }
