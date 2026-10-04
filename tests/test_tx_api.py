@@ -173,26 +173,25 @@ def test_list_orders(base_url):
     print(f"3. 订单列表测试（ListOrders）")
     print(f"{'='*60}")
 
-    # 3.1 正常列表
-    r = req("GET", f"{base_url}/api/v1/orders?page=1&page_size=10")
+    # 3.1 正常列表（一律用游标：offset 分页在分表模式下不可用）
+    r = req("GET", f"{base_url}/api/v1/orders?size=10")
     ok(r, "3.1 订单列表")
     if r.get("code") == 0:
-        total = r["data"]["total"]
         count = len(r["data"]["list"]) if r["data"]["list"] else 0
-        print(f"    总共{total}条订单，当前页{count}条")
+        print(f"    当前页{count}条，total={r['data']['total']}（游标模式为 -1 表示未统计）")
         if r["data"]["list"]:
             first = r["data"]["list"][0]
             print(f"    最新订单: {first.get('order_no')}, 状态={first.get('status')}")
 
     # 3.2 按状态过滤
-    r = req("GET", f"{base_url}/api/v1/orders?status=pending")
+    r = req("GET", f"{base_url}/api/v1/orders?status=pending&size=10")
     ok(r, "3.2 按状态 pending 过滤")
     if r.get("code") == 0:
-        print(f"    待支付订单共{r['data']['total']}条")
+        print(f"    待支付订单当前页{len(r['data']['list'] or [])}条")
 
     # 3.3 按订单号精确查询
     # 先获取一个订单号
-    r = req("GET", f"{base_url}/api/v1/orders?page=1&page_size=1")
+    r = req("GET", f"{base_url}/api/v1/orders?size=1")
     if r.get("code") == 0 and r["data"]["list"]:
         order_no = r["data"]["list"][0]["order_no"]
         r = req("GET", f"{base_url}/api/v1/orders?order_no={order_no}")
@@ -234,6 +233,17 @@ def test_list_orders_cursor(base_url):
     # 3.6 非法游标必须报错（不能静默当成首页）
     r = req("GET", f"{base_url}/api/v1/orders?size=5&cursor=not-base64!!")
     check(r.get("code") != 0, "3.6 非法游标被拒绝")
+
+    # 3.7 offset 分页（page/page_size）：single 下回落主表仍可用；
+    #     monthly（分表已切终态）下无法跨片归并，必须明确报 7004 而不是给出错的结果
+    r = req("GET", f"{base_url}/api/v1/orders?page=1&page_size=5")
+    if r.get("code") == 0:
+        check(isinstance(r["data"].get("total"), int) and r["data"]["total"] >= 0,
+              "3.7 offset 分页可用（单表模式），total 精确")
+        print("    当前为单表模式：offset 分页回落主表")
+    else:
+        check(r.get("code") == 7004, "3.7 offset 分页在分表终态下报 7004")
+        print(f"    当前为分表终态（monthly）：offset 分页明确拒绝（{r.get('message', '')[:60]}）")
 
 
 def test_order_detail(base_url, order_no):
