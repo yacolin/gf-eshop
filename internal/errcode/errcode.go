@@ -89,6 +89,8 @@ const (
 	// CodeOrderShardNotReady 订单分表已开启，但该查询所需的跨片能力还没实现。
 	// 宁可明确报错，也不要静默回落主表读到过期数据。见 docs/order-sharding-design.md §7。
 	CodeOrderShardNotReady = 7004
+	// CodeOrderNoAllocateFailed 订单号/主键的序列分配失败（序列用尽或生成器异常）。
+	CodeOrderNoAllocateFailed = 7005
 
 	CodeMerchantsNotFound           = 10001
 	CodeMerchantBankAccountNotFound  = 10002

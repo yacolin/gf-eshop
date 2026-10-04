@@ -44,11 +44,7 @@ const (
 // 单号内嵌时间的位置："ORD" + YYYYMMDDHHMMSS(14 位) + 序号。
 // 历史单号后 4 位是随机数，Phase 1 起换成 6 位序列 —— 两者时间段位置相同，
 // 所以**只认时间段**就能同时兼容新旧格式（实测历史 2000 条全部满足）。
-const (
-	orderNoTimeStart = 3
-	orderNoTimeEnd   = 17
-	orderNoTimeGoFmt = "20060102150405"
-)
+// 相关常量（orderNoTimeStart/End、orderNoTimeGoFmt）与生成器一起放在 identity.go。
 
 // shardSuffixGoFmt 分片后缀格式（如 202608）。
 const shardSuffixGoFmt = "200601"

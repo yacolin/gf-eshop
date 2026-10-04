@@ -128,9 +128,11 @@ func listOrdersModel(ctx context.Context, sh shard, f orderListFilter) *gdb.Mode
 
 // ── 写入 ────────────────────────────────────────────────────────────────
 
-// insertOrder 写入主订单并返回自增主键。
-func insertOrder(ctx context.Context, sh shard, data g.Map) (int64, error) {
-	return model(ctx, sh, tableOrders).InsertAndGetId(data)
+// insertOrder 写入主订单。
+// 主键由调用方在 data 里显式给出（全局唯一 ID，见 identity.go），不再依赖自增。
+func insertOrder(ctx context.Context, sh shard, data g.Map) error {
+	_, err := model(ctx, sh, tableOrders).Insert(data)
+	return err
 }
 
 // updateOrderByID 在已知分片内按主键更新主订单。
