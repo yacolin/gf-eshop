@@ -462,10 +462,12 @@ func (s *sCarts) syncToDB(ctx context.Context, userID int64) {
 				"sku_id":       item.SkuID,
 				"product_id":   item.ProductID,
 				"product_name": item.ProductName,
-				"sku_spec":     item.SkuSpec,
-				"image":        item.Image,
-				"price":        item.Price,
-				"quantity":     item.Quantity,
+				// sku_spec 是 JSON 列（注释要求 {"颜色":"红色"} 这种结构化快照），
+				// 这里手上只有 sku.SpecSummary 这段纯文本，写进去会 Error 3140（roadmap §2.5）。
+				// TODO: 后续从 sp_sku_specs + sp_attribute_values 组装真正的规格 JSON 回填。
+				"image":    item.Image,
+				"price":    item.Price,
+				"quantity": item.Quantity,
 			})
 			if err != nil {
 				return err

@@ -57,10 +57,11 @@ func (s *sPayments) CreatePayment(ctx context.Context, req *v1.PaymentsCreateReq
 			"channel":         req.Channel,
 			"trade_type":      "native",
 			"idempotency_key": paymentNo,
-			"status":          "pending",
-			"client_ip":       "",
-			"channel_response": "",
-			"created_at":      gtime.Now(),
+			"status":           "pending",
+			"client_ip":        "",
+			// channel_response 是 JSON 列，不能写空串（会 Error 3140，roadmap §2.5）；
+			// 未收到渠道响应时留 NULL。
+			"created_at": gtime.Now(),
 		})
 		if err != nil {
 			return err
@@ -201,11 +202,17 @@ func (s *sPayments) CreateRefund(ctx context.Context, req *v1.RefundsCreateReq) 
 			"merchant_id":       0,
 			"amount":            req.Amount,
 			"reason":            req.Reason,
-			"status":            "pending",
-			"channel_refund_id": "",
-			"channel_response":  "",
-			"applied_at":        gtime.Now(),
-			"created_at":        gtime.Now(),
+			"status": "pending",
+			// channel_refund_id 是可空 + 唯一列：写空串会让**第二条**退款撞唯一键
+			// （Error 1062 Duplicate entry ''），必须留 NULL 由渠道回执再填。
+			// 项目里 sp_skus.barcode 早就踩过同一个坑（见提交 3d71668）。
+			// idempotency_key 是 NOT NULL + UNIQUE，过去没写这个字段，
+			// 导致创建退款一律 Error 1364（roadmap §2.5 同类的「写入路径从未跑通」问题）。
+			// 退款接口目前没有幂等键入参，暂用退款单号占位；真正的幂等应由调用方传入。
+			"idempotency_key": refundNo,
+			// channel_response 是 JSON 列，未收到渠道响应时留 NULL（roadmap §2.5）
+			"applied_at": gtime.Now(),
+			"created_at": gtime.Now(),
 		})
 		if err != nil {
 			return err
