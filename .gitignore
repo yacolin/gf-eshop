@@ -24,3 +24,5 @@ __pycache__/
 .gocache/
 
 docs/inventory-api-requirements.md
+
+/docs/tech-points-*.md
