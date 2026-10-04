@@ -331,10 +331,10 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 | 支付回调按 `order_no` 回写 | 同上 | 无 |
 | `POST /orders` 建单 | 定单一时间基准 → 落当前月分片 | 无 |
 | `GET /orders?order_no=x` | **退化为分片内条件查询**（其实等价于点查） | 无 |
-| `GET /orders?page&page_size` | 保留（offset 分页，分表后**只有单表模式精确**） | 无 |
-| `GET /orders?size&cursor` | ✅ **已实现**（Phase 2）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`（不统计）。分片后各片各取一页再归并即可 | 新增（与 products 的游标约定一致） |
+| `GET /orders?page&page_size` | 保留：single 下**回落主表**（老客户端不受影响）；monthly 下明确报 `7004`（offset 无法跨片正确归并） | ⚠️ monthly 下行为变更 |
+| `GET /orders?size&cursor` | ✅ **已实现**（Phase 2 定义、Phase 4 跨片）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`。分片模式下各活跃片各取一页 → 按 id 倒序归并 → 取前 `size` 条（keyset 的正确性来自「全局前 N 条必在某片的局部前 N 条里」） | 新增（与 products 的游标约定一致） |
 | `GET /orders?user_id=x` 无时间窗 | 默认**强制近 N 个月**（如 12 个月），否则 fan-out 全部活跃片 | ⚠️ 行为变更 |
-| dashboard 全部聚合 | 改走**日汇总表**（§5.6） | 需新增表与写入钩子 |
+| dashboard 全部聚合 | ✅ **已实现**（Phase 4）：5 项聚合**跨片 fan-out 归并**（订单数/营收求和；趋势按日、状态按状态、热销按商品累加）。**没有**改走日汇总表，原因见 §5.6 | 需跨片归并 |
 | 「今天待发货」这类**按业务时间+状态**的运营检索 | `created_at` 分表**无法覆盖** → **必须走 ES**（§5.7） | 新增能力 |
 | 库存 `sp_inventories`、商品 `sp_products` | 不分片 | 无 |
 
@@ -370,10 +370,21 @@ CREATE TABLE tx_order_daily_stats (
   放在业务事务内会放大锁竞争，建议**异步**（复用现有通知/WS 的异步通道，或落 outbox 表）。
 - **历史回填**：迁移脚本按分片逐月 `SELECT DATE(created_at), COUNT(*), SUM(...) GROUP BY 1` 灌入，
   每片一次聚合，秒级完成。
-- 有了它，看板的「订单总数/营收/7 日趋势/状态分布」全部变成**单表单行/单表索引查询**，
-  与分片数无关 —— 也就不需要 fan-out 归并逻辑（比 fan-out 更简单也更稳）。
+- ~~有了它，看板的「订单总数/营收/7 日趋势/状态分布」全部变成单表查询~~
+  —— **这条结论在 Phase 4 落地时被推翻，实际没这么做**，原因是核对后发现两个硬伤：
+  1. **覆盖不全**：表里只有 `order_cnt` / `cancelled_cnt` / `gmv` / `paid_amount` / `refund_amount`，
+     而看板要的是 5 项 —— 订单总数与营收能对上，但**趋势的金额口径**（`SUM(pay_amount)` 全部订单）、
+     **状态分布**（6 种状态）、**热销商品**（按商品维度）在这张表里都没有对应列；
+  2. **会读到过期数据**：表只有 Phase 2 的一次性回填，**事件驱动的累加还没实现**
+     （写入时机那一节写的是设计，不是现状）。今天新建的单不在表里，
+     拿它当看板数据源会少数据。
+  所以 Phase 4 改为**跨片 fan-out 归并**（实测与主表直查逐项一致，且分片数不大时成本很低）。
+- **这张表的定位调整**：作为**可选优化**保留 —— 要用它必须先把「写入时机」那一节的事件驱动
+  累加做出来（建单/支付/退款/取消四个钩子），并给它补上趋势金额与状态维度（或接受降级口径）。
+  分片数涨到几十片、fan-out 成本变高时再启用。另注：热销商品的 fan-out 必须
+  **每片返回全部分组**再归并，不能每片各取 TOP N（商品按时间分片，局部 TOP N 只能得到近似结果）。
 - **进度**：表已建、历史已回填（Phase 2，实测 32 天，与主表直查逐项一致）；
-  看板**读路径的切换**放在 Phase 4，与读路径灰度一起做。
+  读路径在 Phase 4 **没有**切到它（见上），当前由 fan-out 承担。
 
 ### 5.7 订单检索索引（ES）
 
@@ -550,9 +561,10 @@ CREATE TABLE tx_order_daily_stats (
 
 | 配置 | 缺省 | 作用 |
 |------|------|------|
-| `orderShard.mode` | `single` | `single` 读写主表；`monthly` 读写分片（Phase 4） |
+| `orderShard.mode` | `single` | `single` 读写主表；`monthly` 写分片、读分片（Phase 4/5） |
 | `orderShard.dualWrite` | `false` | 写主表的同时把同一订单镜像进分片 |
 | `orderShard.shadowReadPercent` | `0` | 影子读抽样比例（0~100），抽样比对主表与分片 |
+| `orderShard.readShardsPercent` | `0` | 读侧灰度比例（0~100），见 Phase 4 |
 
 影子读抽样是**确定性**的（`crc32(order_no) % 100`），同一条订单每次都会命中同一样本，
 便于复现；且它只记日志与计数，绝不改变接口返回值。
@@ -562,6 +574,7 @@ CREATE TABLE tx_order_daily_stats (
 ```bash
 redis-cli MGET order:shard:shadow:total order:shard:shadow:diff order:shard:shadow:error
 redis-cli MGET order:shard:mirror:mirror_ok order:shard:mirror:mirror_failed
+redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应很小且可解释）
 ```
 
 **实测**（`dualWrite=true` + `shadowReadPercent=100`，当月分片 202610）
@@ -579,16 +592,55 @@ redis-cli MGET order:shard:mirror:mirror_ok order:shard:mirror:mirror_failed
 > Phase 4 才会把读路径切到分片（`mode=monthly`），届时列表/看板聚合需要跨片 fan-out 或
 > 日汇总表，目前 `shardForScan` 在 monthly 下仍是明确报错而不是静默读主表。
 
-### Phase 4：灰度切读
+### Phase 4：灰度切读 ✅ 已完成
 
-- 动作：`orderShard.mode: monthly` 按流量比例放量（当前是单开关；要灰度还得再加
-  `orderShard.readShardsPercent` 之类的读侧比例，Phase 4 落地时补）。
-- 验证：核心接口 P99、错误率、`order_shard_fallback_total`、跨片查询耗时。
-- 回滚：**单开关回落主表**，秒级生效。
+**开关与语义**
+
+| 配置 | 作用 |
+|------|------|
+| `orderShard.readShardsPercent` | 读侧灰度比例（0~100）。点查按 `crc32(order_no)%100` **确定性**抽样，列表/看板按请求抽样 |
+| `orderShard.mode` | `single`：主表仍是真相源 ⇒ 分片未命中/出错**回落主表**并计数；`monthly`：恒定读分片、**不回落**（主表已停写，回落只会读到过期数据） |
+
+- 切读阶段对账方向**反过来**：主读走分片时再读一次主表比对（`compareShardAgainstMain`，
+  只在 `single` + `shadowReadPercent>0` 时做），差异率与回落次数都进 Redis 计数。
+- **列表**：游标分页跨片 fan-out —— 各活跃片各取一页，按 id 倒序归并取前 `size` 条；
+  keyset 的正确性来自「全局前 N 条必然出现在某片的局部前 N 条里」，所以每片取 `size` 条就够。
+  offset 分页无法跨片正确归并：`single` 下回落主表（老客户端不受影响），`monthly` 下明确报 `7004`。
+- **看板**：5 项聚合全部跨片 fan-out（详见 §5.6 的修正说明）。
+- **自动建分片**：写入前用 `CREATE TABLE IF NOT EXISTS ... LIKE` 幂等建表（进程内缓存，
+  每片只做一次），于是**双写会自动吸入当月分片**，不会再因为「当月分片还没建」而静默失败。
+  ⚠️ DDL 必须放在**事务外**（MySQL 的 DDL 隐式提交，放进写事务会毁掉原子性），
+  因此建分片发生在写事务之前 —— 建单、改状态、支付回调三个入口各一次。
+
+**一处必须提防的坑：读源 ≠ 写目标**
+
+灰度期间「父单从哪读」和「这条单写去哪」是两件事：`single` 下落回主表的订单，
+读源是主表但写目标仍是主表（+ 镜像）；`monthly` 下两者都是分片。
+改造前 `UpdateStatus` 直接拿读路径返回的分片去写 —— 灰度命中分片时会**绕过主表写入**。
+现在读路径返回的分片只用于「同源读子表」，写目标由 `shardFromOrderNo`（由 `mode` 决定）单独算。
+
+**实测**
+
+| 项 | 结果 |
+|----|------|
+| 点查走分片 | 详情与主表/分片一致；反向对账 `total≥1`、`diff=0` |
+| 分片缺行回落 | 只在主表存在的订单仍能点到；`fallback:read_order_miss` +1 |
+| 未镜像的行 | 列表/看板**看不见它**（分片 2001 / 主表 2002）—— 这正是切读前必须保证分片完整的原因 |
+| 列表跨片 | 翻完全部 2001 条与主表 id 集合完全一致、严格 id 倒序、无重复 |
+| offset 分页 | `single` 下回落主表且 total 正确；`monthly` 下返回 `7004` |
+| 看板 5 项聚合 | 订单总数/营收/状态分布/趋势/热销 TOP1 与主表直查逐项一致 |
+| 反向验证 | 改坏分片行 → 切读确实读到坏值，但反向对账立刻 `diff+1` 并打出两侧指纹（灰度的风险面与安全网同时被证实） |
+| `monthly` 终态 | 建单/改状态/支付回写只落分片、主表行数不变；老数据（202608 迁移分片）仍可读 |
+| 自动建分片 | 删掉 202610 分片后开双写建单：4 张表自动建出（日志仅 1 条），`mirror_ok=2` / `mirror_failed=0` |
+| 默认关闭回归 | 与 Phase 4 前 HEAD 逐字段对比 14 项零差异；`tests/test_tx_api.py` 36/36；游标回归 0 失败 |
+
+- 回滚：`readShardsPercent` 置 0（或 `mode` 改回 `single`）即秒级回落主表。
 
 ### Phase 5：停双写
 
-- 动作：确认全量切读稳定后，停止写主表。
+- 动作：确认全量切读稳定后，`mode: monthly` + `dualWrite: false`，停止写主表。
+- ⚠️ **前置**：前端必须已经改用游标分页 —— `monthly` 下 offset 分页会返回 `7004`（见 §2.6）。
+  实测 `monthly` 终态已通（建单/改状态/支付回写只落分片）。
 - 回滚：主表停写期间的新数据只在新分片 —— **必须在这之前确认无需回滚**。
 
 ### Phase 6：归档旧表
@@ -607,7 +659,7 @@ redis-cli MGET order:shard:mirror:mirror_ok order:shard:mirror:mirror_failed
 | Phase 1 | 切回旧生成器 | 无 | 分钟级 |
 | Phase 2 | 删除分片表 | 无（主表未动） | 分钟级 |
 | Phase 3 | 关双写开关 | 无（主表是真相源） | 秒级 |
-| Phase 4 | `orderShard.mode` 改回 `single` | 无 | **秒级** |
+| Phase 4 | `orderShard.readShardsPercent` 置 0（或 `mode` 改回 `single`） | 无 | **秒级** |
 | Phase 5 | 重启双写 | 停写期间新单只在分片，需手工回灌 | 小时级 |
 | Phase 6 | `RENAME` 回旧名 | 无（30 天窗口内） | 分钟级 |
 

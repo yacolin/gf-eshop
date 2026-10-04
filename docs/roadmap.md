@@ -22,9 +22,14 @@
 
 ### 1.2 `git push`
 
-本地领先 `origin/main`，**未推送**（无 force-push 需求）。截至订单分表 Phase 2 完成时
-领先 11 个提交：`c466686`、`08b0416`，其余 9 个是订单分表相关（Phase 0/1/2、P0 修复、
-测试修复、文档登记）。
+本地领先 `origin/main`，**未推送**（无 force-push 需求）。订单分表 Phase 0~4 与前置 P0 修复
+全部在里面：`c466686`、`08b0416` 两个是分表之前的工作，其余为订单分表相关
+（Phase 0/1/2/3/4、P0 修复、测试修复、文档登记）。
+
+> 2026-10-04 二次更正：Phase 2 完成时记的是「领先 11 个」。之后又落了 Phase 3（2 个提交）、
+> Phase 4（2 个提交），并把「曾把订单分表 DDL 放进本仓库 `deploy/migrations/`」那个提交
+> 从历史里重写掉了（同一份 schema 不能有两个来源，DDL 归 `std-eshop-db`），
+> 所以计数不是简单相加。
 
 > 2026-10-04 更正：本节原先写的「停在 `c450516`、领先 3 个（`fb403e0`/`7b9f12b`/`a2e630b`）」
 > 已过期 —— 那三个提交早已在 `origin/main` 上。
@@ -47,6 +52,10 @@
 | **Phase 2 的意外收获** | `decodeOrderID` 原先对任何正整数都能解出时间，**老自增主键 1..2000 会被解成 2024-01-01** 并路由到不存在的分片 → 已加 `legacyOrderIDMax` 阈值，老主键改走 `tx_order_shard_map`；`ShardOfOrderID` 是统一入口，无法定位时明确报错 |
 | **Phase 3 状态** | ✅ **已完成**。双写（`orderShard.dualWrite`）+ 影子读对账（`orderShard.shadowReadPercent`），缺省全关 = 现状。**实测**：建单/状态流转/支付回写三条路径主表与分片逐列一致；影子读 `total=11 diff=0 error=0`；**反向验证**把分片改坏后差异计数 +1、接口仍返回主表值；**重放验证**只改主表复现缺口后重跑 migrate 即追平且无重复行；默认关闭下与 Phase 3 前 HEAD 对比 14 项零差异、套件 36/36 |
 | **Phase 3 的实现取舍** | 双写没有逐条改 8 个写函数，而是**在事务内按订单整单镜像**（`INSERT ... SELECT ... ON DUPLICATE KEY UPDATE 全列`）——只挂 3 个编排点、与主写原子、且全列覆盖让它**自愈**（漏掉的更新下次写入自动补上）。迁移也因此获得重放能力（重跑 `--action=migrate` 即重新同步），不需要单独的 replay 命令。`tx_order_logs` 没有 `order_no` 索引，故日志按 `order_id` 定位 |
+| **Phase 4 状态** | ✅ **已完成**（灰度切读）。`orderShard.readShardsPercent` 读侧灰度：`single` 下未命中/出错**回落主表**并计数，`monthly` 下恒定读分片且不回落。**实测**：点查走分片 diff=0；缺行回落计数 +1；列表跨片 fan-out 翻完 2001 条与主表 id 集合完全一致；offset 分页 single 回落 / monthly 报 7004；看板 5 项聚合与主表直查逐项一致；`monthly` 终态「建单/改状态/支付回写只落分片、主表行数不变」也通了；默认关闭回归 14 项零差异 + 套件 36/36 |
+| **Phase 4 顺带解决** | 双写**自动吸入当月分片**：写入前 `CREATE TABLE IF NOT EXISTS ... LIKE` 幂等建表（DDL 必须在事务外），实测删掉 202610 分片后开双写建单 → 4 张表自动建出、`mirror_ok=2`/`mirror_failed=0` |
+| **Phase 4 发现（推翻一条旧结论）** | §5.6 原本设想「看板改走日汇总表」，核表后不成立：该表只有 `order_cnt/cancelled_cnt/gmv/paid_amount/refund_amount`，**状态分布、热销商品、趋势金额口径都没有对应列**，且**只有 Phase 2 的一次性回填、事件驱动累加还没做**（直接用会少今天的数据）→ 改为跨片 fan-out；汇总表降级为「可选优化」，启用前提是先做四个事件钩子 |
+| **Phase 4 避开的坑** | 读源 ≠ 写目标：灰度下父单可能回落主表读，而写目标仍由 `mode` 决定。原 `UpdateStatus` 复用读路径返回的分片去写 → 灰度命中分片时会**绕过主表写入**，已拆开 |
 | **Phase 0 修正了文档一处错误** | GoFrame 的 `Insert` 会**无条件覆盖** `created_at`（`gdb_model_insert.go:311-321`），实测同一次建单四表相差 2~4 ms → 设计文档「三者必然同月」在月份级成立、毫秒级**不成立**，Phase 2 必须按文档 §5.3 的方案 A（`.Unscoped()`）处理跨月窗口 |
 | **顺带发现（前置必修）** | `generateOrderNo()` 后 4 位是 `rand(10000)`，@10 万单/日 **日均碰撞期望 5.8 次**、峰值秒内 86% —— 撞 `uk_order_no` 会让用户下单直接失败。修法（每秒序列）与路由天然统一 |
 | **改造面** | 业务代码只有 3 个文件（`logic/orders`、`logic/payments`、`logic/dashboard`）共 35 处引用，比看上去小 |
@@ -116,7 +125,9 @@
 |----|------|
 | **背景** | 分表后 offset 分页无法跨片归并、`COUNT(*)` 要跨片 fan-out，后端已提供 keyset 游标分页（`ccd5be7`），需要两个前端仓库跟进 |
 | **新契约** | `GET /api/v1/orders?size=20[&cursor=<上一页的 next_cursor>]`；响应新增 `next_cursor`（为空表示没有更多）；**游标模式下 `total = -1` 表示未统计**，前端不要再显示「共 N 条」 |
-| **兼容性** | `page` + `page_size` 行为完全不变（`total` 仍精确），所以前端可以渐进迁移，不做也可以先不动 |
+| **兼容性** | 当前 `single` 模式下 `page` + `page_size` 行为完全不变（`total` 仍精确），所以前端可以渐进迁移 |
+| **⚠️ 硬前置** | 一旦切到 `orderShard.mode: monthly`，offset 分页会返回 `7004`（无法跨片正确归并，见设计文档 §5.5）—— 也就是说**两个前端仓库必须先改用游标分页，才能切 monthly**。这是 Phase 5 的前置条件，不是可选优化 |
+| **灰度期行为** | 只开读灰度（`readShardsPercent`）时，offset 分页会**回落主表**并计入 `order:shard:fallback:list_offset`，老客户端不受影响 |
 | **待办** | 把订单列表从「页码 + total」改成「游标 + 上拉加载」；错误处理里补上「非法游标」这一种（后端会返回参数错误而不是空列表） |
 | **验证** | 前端翻到最后一页时 `next_cursor` 为空；切换筛选条件后游标重置（不要复用旧游标） |
 
@@ -139,6 +150,7 @@
 | 订单分表 Phase 2（建分片 + 迁移 + 对账） | `b4a3fe1` | `main shard --action=create\|migrate\|verify`；8 张分片表、2000 单 + 5025 明细迁入、32 天日汇总回填；三重对账（行数 + 全字段 CRC32 + 金额）通过且可重复执行；去掉两个 `AUTO_INCREMENT` |
 | 订单列表游标分页（keyset） | `ccd5be7` | `size` + `cursor`（base64(id)，与 products 一致）、`next_cursor`、游标模式 `total=-1`；page 模式行为不变；套件 36/36，前端适配见 §2.6 |
 | 订单分表 Phase 3（双写 + 影子读） | 见 §1.3 | 事务内按订单整单镜像（自愈、原子）；影子读确定性抽样 + Redis 计数；反向验证能抓到差异；migrate 变全列覆盖因而具备重放能力 |
+| 订单分表 Phase 4（灰度切读 + 跨片查询） | 见 §1.3 | 读侧灰度 + 回落计数；列表 keyset 跨片归并；offset 分页 single 回落 / monthly 报 7004；看板 5 项聚合 fan-out；双写自动建当月分片；monthly 终态实测通过 |
 
 ---
 
