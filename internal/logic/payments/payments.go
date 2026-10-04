@@ -141,7 +141,7 @@ func (s *sPayments) HandleCallback(ctx context.Context, req *v1.PaymentsCallback
 		// 支付成功，更新关联订单的支付状态和状态
 		// （orders + sub_orders 都在订单域内的一个出口里完成，且复用本事务的 ctx）
 		if req.Status == "success" {
-			if err = service.Orders().MarkPaidByOrderNo(ctx, payment.OrderNo); err != nil {
+			if err = service.Orders().MarkPaidByOrderNo(ctx, payment.OrderNo, payment.OrderId); err != nil {
 				return err
 			}
 		}

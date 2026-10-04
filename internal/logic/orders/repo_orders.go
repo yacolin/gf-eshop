@@ -44,6 +44,8 @@ func findOrderWithShardByOrderNo(ctx context.Context, orderNo string) (*entity.O
 	if err != nil {
 		return nil, shard{}, err
 	}
+	// Phase 3 影子读：主读走主表时按比例再读分片做对账（只记日志/计数，不影响返回）
+	shadowCompareOrder(ctx, orderNo, sh, o)
 	return o, sh, nil
 }
 
@@ -270,7 +272,8 @@ func orderStatusDistribution(ctx context.Context) ([]orderStatusCountRow, error)
 //
 // 与改造前的差异：四次要写入的 paid_at / updated_at 现在共用同一个 now，
 // 而不是各自取一次时间（改造前主订单与子订单的 paid_at 会差几微秒）。
-func markOrderPaidByOrderNo(ctx context.Context, orderNo string) error {
+// orderID 仅用于双写镜像 tx_order_logs（该表按 order_id 定位，没有 order_no 索引）。
+func markOrderPaidByOrderNo(ctx context.Context, orderNo string, orderID int64) error {
 	sh, err := shardFromOrderNo(ctx, orderNo)
 	if err != nil {
 		return err
@@ -285,9 +288,14 @@ func markOrderPaidByOrderNo(ctx context.Context, orderNo string) error {
 	if err != nil {
 		return err
 	}
-	return updateSubOrdersByParentOrderNo(ctx, sh, orderNo, g.Map{
+	if err = updateSubOrdersByParentOrderNo(ctx, sh, orderNo, g.Map{
 		"status":     "paid",
 		"paid_at":    now,
 		"updated_at": now,
-	})
+	}); err != nil {
+		return err
+	}
+	// Phase 3 双写：把这一单的最新行镜像进分片（同事务，失败只记日志）
+	mirrorOrderBestEffort(ctx, orderNo, orderID, mirrorShardOfOrderNo(ctx, orderNo))
+	return nil
 }

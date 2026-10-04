@@ -268,6 +268,10 @@ func (s *sOrders) createOnce(
 			return err
 		}
 
+		// Phase 3 双写：把这一单的四张表行镜像进分片。
+		// 放在事务内 ⇒ 与主写原子；失败只记日志（主表是唯一真相源）
+		mirrorOrderBestEffort(ctx, orderNo, orderId, mirrorShardOfCreatedAt(ctx, now))
+
 		// 重新读取完整订单（分片已知，无需二次推导）
 		order, err = findOrderByIDIn(ctx, sh, orderId)
 		return err
@@ -496,7 +500,7 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 		}
 
 		// 创建订单日志
-		return insertOrderLog(ctx, sh, g.Map{
+		if err = insertOrderLog(ctx, sh, g.Map{
 			"order_id":      order.Id,
 			"order_no":      order.OrderNo,
 			"from_status":   order.Status,
@@ -505,7 +509,13 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 			"operator_type": "system",
 			"note":          req.Note,
 			"created_at":    now,
-		})
+		}); err != nil {
+			return err
+		}
+
+		// Phase 3 双写：状态变更同样要镜像进分片（同事务，失败只记日志）
+		mirrorOrderBestEffort(ctx, order.OrderNo, order.Id, mirrorShardOfOrderNo(ctx, order.OrderNo))
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -531,8 +541,8 @@ func (s *sOrders) GetByOrderNo(ctx context.Context, orderNo string) (*entity.Ord
 
 // MarkPaidByOrderNo 支付成功后回写主订单与子订单状态（按业务单号，覆盖该单号下全部子订单）。
 // 由调用方在事务中调用时，会自动加入该事务（GoFrame 从事务 ctx 中取 tx）。
-func (s *sOrders) MarkPaidByOrderNo(ctx context.Context, orderNo string) error {
-	return markOrderPaidByOrderNo(ctx, orderNo)
+func (s *sOrders) MarkPaidByOrderNo(ctx context.Context, orderNo string, orderID int64) error {
+	return markOrderPaidByOrderNo(ctx, orderNo, orderID)
 }
 
 // StatsSummary 订单总数与已支付金额合计。

@@ -111,7 +111,40 @@ func warnMonthlyNotReady(ctx context.Context) {
 	})
 }
 
-// shardFromCreatedAt 写入路径的分片推导：按订单创建时间。
+// ── 纯计算：分片只由「时间」决定，与运行模式无关 ────────────────────────────
+//
+// 模式决定的是「读哪里、写哪里、要不要镜像」，不应该影响分片怎么算。
+// Phase 3 的双写需要「主表 + 分片」同时写，因此把计算与模式解耦。
+
+// shardOfCreatedAt 按创建时间算分片。
+func shardOfCreatedAt(t *gtime.Time) shard {
+	if t == nil {
+		t = gtime.Now()
+	}
+	return shard{suffix: t.Format("Ym")}
+}
+
+// shardOfOrderNo 按单号内嵌的 14 位时间戳算分片；解析失败返回 ok=false。
+func shardOfOrderNo(orderNo string) (shard, bool) {
+	t, ok := parseOrderNoTime(orderNo)
+	if !ok {
+		return shard{}, false
+	}
+	return shard{suffix: t.Format(shardSuffixGoFmt)}, true
+}
+
+// shardOfEncodedID 按「编码主键」算分片；老自增主键返回 ok=false（需查映射表）。
+func shardOfEncodedID(id int64) (shard, bool) {
+	t, ok := decodeOrderID(id)
+	if !ok {
+		return shard{}, false
+	}
+	return shard{suffix: t.Format(shardSuffixGoFmt)}, true
+}
+
+// ── 模式化入口：决定本次读写落在主表还是分片 ──────────────────────────────
+
+// shardFromCreatedAt 主写入路径的分片推导（monthly 才落到分片）。
 //
 // 调用方必须传入「单一时间基准」——即同时用于生成 order_no、雪花主键与 created_at 的那一个 now。
 // 否则月末边界会出现单号、主键、created_at 指向不同月份，读路径与写路径落到不同分片。
@@ -119,10 +152,7 @@ func shardFromCreatedAt(ctx context.Context, t *gtime.Time) shard {
 	if shardMode(ctx) != shardModeMonthly {
 		return shard{}
 	}
-	if t == nil {
-		t = gtime.Now()
-	}
-	return shard{suffix: t.Format("Ym")}
+	return shardOfCreatedAt(t)
 }
 
 // shardFromOrderNo 读取路径的分片推导：解析单号内嵌的 14 位时间戳。
@@ -130,12 +160,54 @@ func shardFromOrderNo(ctx context.Context, orderNo string) (shard, error) {
 	if shardMode(ctx) != shardModeMonthly {
 		return shard{}, nil
 	}
-	t, ok := parseOrderNoTime(orderNo)
+	sh, ok := shardOfOrderNo(orderNo)
 	if !ok {
 		return shard{}, errcode.Newf(errcode.CodeInvalidParams,
 			"订单号 %q 无法解析出创建时间，无法定位分片", orderNo)
 	}
-	return shard{suffix: t.Format(shardSuffixGoFmt)}, nil
+	return sh, nil
+}
+
+// ── Phase 3：双写与影子读的开关 ───────────────────────────────────────────
+
+// dualWriteEnabled 是否开启双写（写主表的同时把同一订单镜像进分片）。
+// 缺省 false：不配置就维持现状。
+func dualWriteEnabled(ctx context.Context) bool {
+	return g.Cfg().MustGet(ctx, "orderShard.dualWrite", false).Bool()
+}
+
+// mirrorShardOfCreatedAt 返回双写模式下需要额外镜像的分片；不需要时为零值。
+// monthly 模式下主写本身就在分片，故不再镜像。
+func mirrorShardOfCreatedAt(ctx context.Context, t *gtime.Time) shard {
+	if !dualWriteEnabled(ctx) || shardMode(ctx) == shardModeMonthly {
+		return shard{}
+	}
+	return shardOfCreatedAt(t)
+}
+
+// mirrorShardOfOrderNo 同上，按单号定位（用于改状态、支付回写这类已有单号的写入）。
+func mirrorShardOfOrderNo(ctx context.Context, orderNo string) shard {
+	if !dualWriteEnabled(ctx) || shardMode(ctx) == shardModeMonthly {
+		return shard{}
+	}
+	sh, ok := shardOfOrderNo(orderNo)
+	if !ok {
+		return shard{}
+	}
+	return sh
+}
+
+// shadowReadPercent 影子读抽样比例（0~100），缺省 0 = 关闭。
+func shadowReadPercent(ctx context.Context) int {
+	p := g.Cfg().MustGet(ctx, "orderShard.shadowReadPercent", 0).Int()
+	switch {
+	case p <= 0:
+		return 0
+	case p > 100:
+		return 100
+	default:
+		return p
+	}
 }
 
 // shardForScan 用于无法由单号定位分片的查询（订单列表、看板聚合）。

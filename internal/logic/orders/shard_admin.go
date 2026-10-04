@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gogf/gf/v2/frame/g"
@@ -152,9 +153,17 @@ func MigrateShards(ctx context.Context, from, to string, batch int) (*MigrationR
 }
 
 // migrateTable 按主键区间分批把一个月的行复制进分片表。
+//
 // 用 ON DUPLICATE KEY UPDATE 做幂等，而不是 INSERT IGNORE —— 后者会把
 // CHECK 约束冲突降级成告警并丢行，等于静默丢数据。
+// 并且这里是**全列覆盖**（见 upsertAllColumns），所以重跑 migrate 不只是「不重复」，
+// 而是把主表的当前内容重新同步过去 —— 这正是设计文档 §7 Phase 3 说的
+// 「迁移期间落在历史月份的零星更新」的重放方式。
 func migrateTable(ctx context.Context, base string, sh shard, span monthSpan, batch int) (int64, error) {
+	upsert, err := upsertAllColumns(ctx, base)
+	if err != nil {
+		return 0, err
+	}
 	var (
 		target = sh.table(base)
 		lastID int64
@@ -176,10 +185,7 @@ func migrateTable(ctx context.Context, base string, sh shard, span monthSpan, ba
 
 		res, err := g.DB().Exec(ctx,
 			"INSERT INTO `"+target+"` SELECT * FROM `"+base+"` "+
-				"WHERE created_at >= ? AND created_at < ? AND id > ? AND id <= ? "+
-				// 幂等：已存在则原样覆盖（VALUES(id) 是「本该插入的那个值」，写 id = id 在
-				// INSERT...SELECT 下会被判为列名歧义，Error 1052）
-				"ON DUPLICATE KEY UPDATE id = VALUES(id)",
+				"WHERE created_at >= ? AND created_at < ? AND id > ? AND id <= ?"+upsert,
 			span.Start, span.End, lastID, batchMax)
 		if err != nil {
 			return total, fmt.Errorf("迁移 %s(%s) 区间 (%d, %d] 失败: %w", base, span.YM, lastID, batchMax, err)
@@ -350,6 +356,34 @@ func tableColumns(ctx context.Context, table string) ([]string, error) {
 		return nil, errcode.Newf(errcode.CodeNotFound, "表 %s 不存在或没有列", table)
 	}
 	return cols, nil
+}
+
+// upsertClauseCache 缓存 ON DUPLICATE KEY UPDATE 子句：双写每次都要用，
+// 不该每次都查 information_schema（4 张表 × 每条订单写入）。
+var upsertClauseCache sync.Map // 表名 -> 子句
+
+// upsertAllColumns 生成「全列覆盖」的 ON DUPLICATE KEY UPDATE 子句。
+//
+// 全列覆盖是刻意的：复制/重放必须让分片行与主表行**完全一致**，
+// 若只写 `id = VALUES(id)` 之类的空更新，重跑就只是「不重复」而不会修正已漂移的行。
+// 列名从 information_schema 动态取，因此加列后自动跟上。
+func upsertAllColumns(ctx context.Context, table string) (string, error) {
+	if v, ok := upsertClauseCache.Load(table); ok {
+		return v.(string), nil
+	}
+	cols, err := tableColumns(ctx, table)
+	if err != nil {
+		return "", err
+	}
+	parts := make([]string, 0, len(cols))
+	for _, c := range cols {
+		// VALUES(col) 指「本该插入的那个值」；直接写 col = col 在 INSERT...SELECT
+		// 下会被判为列名歧义（Error 1052）
+		parts = append(parts, fmt.Sprintf("`%s` = VALUES(`%s`)", c, c))
+	}
+	clause := " ON DUPLICATE KEY UPDATE " + strings.Join(parts, ", ")
+	upsertClauseCache.Store(table, clause)
+	return clause, nil
 }
 
 func quoteAll(cols []string) []string {

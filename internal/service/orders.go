@@ -25,7 +25,8 @@ type IOrders interface {
 
 	// MarkPaidByOrderNo 支付成功后回写主订单与子订单状态。
 	// 覆盖该订单号下的全部子订单；在调用方的事务中执行时自动加入该事务。
-	MarkPaidByOrderNo(ctx context.Context, orderNo string) error
+	// orderID 供分表双写镜像 tx_order_logs 使用（该表按 order_id 定位）。
+	MarkPaidByOrderNo(ctx context.Context, orderNo string, orderID int64) error
 
 	// StatsSummary 订单总数与已支付金额合计。
 	StatsSummary(ctx context.Context) (OrderStatsSummary, error)
