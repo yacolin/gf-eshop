@@ -117,6 +117,9 @@ type orderListFilter struct {
 	Status        string // != "" 生效
 	PaymentStatus string // != "" 生效
 	OrderNo       string // != "" 生效
+	// Window 列表的时间窗口（分表后必须有：否则要跨全部活跃分片 fan-out）。
+	// 由 resolveListWindow 解析，见 list_window.go。
+	Window orderListWindow
 }
 
 // countOrdersByFilter 按筛选条件统计订单数。
@@ -124,15 +127,26 @@ type orderListFilter struct {
 // 只服务于 offset 分页（page/page_size）的 total，因此与 pageOrders 一样只在主表上做：
 // 分片模式下 offset 分页本身无法正确跨片归并（见 offsetListShard）。
 func countOrdersByFilter(ctx context.Context, f orderListFilter) (int64, error) {
-	sh, err := offsetListShard(ctx, f)
+	src, err := offsetListSource(ctx, f)
 	if err != nil {
 		return 0, err
 	}
-	n, err := listOrdersModel(ctx, sh, f).Count()
-	if err != nil {
-		return 0, err
+	switch {
+	case src.Main:
+		n, err := listOrdersModel(ctx, shard{}, f).Count()
+		if err != nil {
+			return 0, err
+		}
+		return int64(n), nil
+	case len(src.Shards) == 0:
+		return 0, nil // 窗口内没有分片：空结果（不回落主表，否则会返回无关月份的行）
+	default:
+		n, err := listOrdersModel(ctx, src.Shards[0], f).Count()
+		if err != nil {
+			return 0, err
+		}
+		return int64(n), nil
 	}
-	return int64(n), nil
 }
 
 // listShardForPointLookup 列表条件里带了 order_no 时，它其实等价于点查：
@@ -145,34 +159,42 @@ func listShardForPointLookup(ctx context.Context, f orderListFilter) (shard, boo
 	return shardOfOrderNo(f.OrderNo)
 }
 
-// offsetListShard 决定 offset 分页（page/page_size）读哪里。
+// offsetListSource 决定 offset 分页（page/page_size）读哪里。
 //
-// offset 分页在分片下无法正确归并（每片各取 offset 再合并是错的），所以：
-//   - 带 order_no 的查询等价于点查 → 直接路由到那一个月，精确；
-//   - 主表仍是真相源（single）：回落主表并计数，保证灰度期间老客户端不受影响；
-//   - monthly（主表已停写）：回落只会读到过期数据 → 明确报错，提示改用游标分页。
-func offsetListShard(ctx context.Context, f orderListFilter) (shard, error) {
-	if sh, ok := listShardForPointLookup(ctx, f); ok {
-		return sh, nil
+// offset 分页在**多分片**下无法正确归并（每片各取 offset 再合并是错的），但：
+//   - 带 order_no 的查询等价于点查 → 单分片，精确；
+//   - **带 month / 区间且落在单个分片内** → 也精确 —— 这是新增月份参数顺带恢复的能力：
+//     前端只要带上月份，老的 page/page_size 页面就能继续用，不必立刻改游标；
+//   - 多分片：主表仍是真相源（single）时回落主表并计数；monthly 下明确报错并提示带月份。
+func offsetListSource(ctx context.Context, f orderListFilter) (listSource, error) {
+	src, err := resolveListSource(ctx, f)
+	if err != nil {
+		return listSource{}, err
 	}
-	if shardMode(ctx) == shardModeMonthly {
-		return shard{}, errcode.Newf(errcode.CodeOrderShardNotReady,
-			"offset 分页在分片模式下无法正确跨片归并，请改用游标分页（cursor + size）；"+
-				"若已知订单号，直接带 order_no 查询即可精确定位")
+	if src.Main || len(src.Shards) <= 1 {
+		return src, nil
 	}
-	if readShardsForList(ctx) {
-		shardFallbackCounter(ctx, "list_offset")
-	}
-	return shard{}, nil
+	return listSource{}, errcode.Newf(errcode.CodeOrderShardNotReady,
+		"offset 分页在跨分片时无法正确归并（本次命中 %d 个分片）："+
+			"请改用游标分页（cursor + size），或带上 month（如 month=%s）把范围收窄到单个月；"+
+			"若已知订单号，直接带 order_no 查询即可精确定位",
+		len(src.Shards), f.Window.Months[0])
 }
 
 // pageOrders 按筛选条件 offset 分页查询订单（固定 id 倒序）。
 func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*entity.Orders, error) {
-	sh, err := offsetListShard(ctx, f)
+	src, err := offsetListSource(ctx, f)
 	if err != nil {
 		return nil, err
 	}
-	return listOrdersPage(ctx, sh, f, page, size, 0)
+	switch {
+	case src.Main:
+		return listOrdersPage(ctx, shard{}, f, page, size, 0)
+	case len(src.Shards) == 0:
+		return nil, nil
+	default:
+		return listOrdersPage(ctx, src.Shards[0], f, page, size, 0)
+	}
 }
 
 // pageOrdersByCursor 走 keyset 分页：取 id 小于 beforeID 的一页（固定 id 倒序）。
@@ -180,25 +202,22 @@ func pageOrders(ctx context.Context, f orderListFilter, page, size int) ([]*enti
 // 分片模式下每片各取一页再按 id 归并即可 —— keyset 的正确性来自「全局前 N 条
 // 必然出现在某片的局部前 N 条里」，所以每片取 size 条就够了，不需要取全量。
 func pageOrdersByCursor(ctx context.Context, f orderListFilter, beforeID int64, size int) ([]*entity.Orders, error) {
-	// 带 order_no 的查询等价于点查，不必跨片
-	if sh, ok := listShardForPointLookup(ctx, f); ok {
-		return listOrdersPage(ctx, sh, f, 0, size, beforeID)
-	}
-	if !readShardsForList(ctx) {
-		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
-	}
-	shards, err := activeShards(ctx)
+	src, err := resolveListSource(ctx, f)
 	if err != nil {
 		return nil, err
 	}
-	if len(shards) == 0 {
-		// 还没有任何分片表：退回主表，避免灰度把列表读空
-		shardFallbackCounter(ctx, "list_no_shard")
+	switch {
+	case src.Main:
 		return listOrdersPage(ctx, shard{}, f, 0, size, beforeID)
+	case len(src.Shards) == 0:
+		return nil, nil // 窗口内没有分片：空页
+	case len(src.Shards) == 1:
+		// 只命中一个分片：不需要归并（这也是「带 month 更省」的原因）
+		return listOrdersPage(ctx, src.Shards[0], f, 0, size, beforeID)
 	}
 
 	var merged []*entity.Orders
-	for _, sh := range shards {
+	for _, sh := range src.Shards {
 		part, err := listOrdersPage(ctx, sh, f, 0, size, beforeID)
 		if err != nil {
 			if allowShardFallback(ctx) {
@@ -249,6 +268,17 @@ func listOrdersModel(ctx context.Context, sh shard, f orderListFilter) *gdb.Mode
 	}
 	if f.OrderNo != "" {
 		m = m.Where(dao.Orders.Columns().OrderNo, f.OrderNo)
+	}
+	// 闭开区间：created_at >= Start AND created_at < End
+	// （"到某日"在解析时已 +1 天，避免时间部分造成的边界漏单）
+	//
+	// 例外：带 order_no 的点查**不套时间窗** —— 客服拿单号找单时不该被
+	// 「默认只看近 N 个月」挡住（单号里已有时间，路由本来就能定位到单分片）。
+	if f.OrderNo == "" && f.Window.Start != nil {
+		m = m.WhereGTE(dao.Orders.Columns().CreatedAt, f.Window.Start)
+	}
+	if f.OrderNo == "" && f.Window.End != nil {
+		m = m.WhereLT(dao.Orders.Columns().CreatedAt, f.Window.End)
 	}
 	return m
 }

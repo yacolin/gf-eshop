@@ -170,17 +170,27 @@ func shadowCompareOrder(ctx context.Context, orderNo string, primary shard, expe
 //
 // 计数失败（如 Redis 不可用）不影响主流程。
 func shardMirrorCounter(ctx context.Context, kind string) {
-	_, _ = g.Redis().Do(ctx, "INCR", "order:shard:mirror:"+kind)
+	incrCounter(ctx, "order:shard:mirror:"+kind)
+}
+
+// incrCounter 尽力累加一个计数。
+//
+// Redis 不可用、或进程没注册 redis 驱动（例如单测二进制）时**静默跳过**：
+// g.Redis() 在驱动缺失时会直接 panic，那会把「只该记个数的观测点」
+// 变成主链路上的故障点。这里用 recover 兜住，兑现「计数失败不影响主流程」。
+func incrCounter(ctx context.Context, key string) {
+	defer func() { _ = recover() }()
+	_, _ = g.Redis().Do(ctx, "INCR", key)
 }
 
 func shardShadowCounter(ctx context.Context, kind string) {
-	_, _ = g.Redis().Do(ctx, "INCR", "order:shard:shadow:"+kind)
+	incrCounter(ctx, "order:shard:shadow:"+kind)
 }
 
 // shardFallbackCounter 累计「分片读回落主表」的次数：灰度期间这个数应该很小且可解释，
 // 长期不为 0 说明分片缺数据或分片表缺失。
 func shardFallbackCounter(ctx context.Context, kind string) {
-	_, _ = g.Redis().Do(ctx, "INCR", "order:shard:fallback:"+kind)
+	incrCounter(ctx, "order:shard:fallback:"+kind)
 }
 
 // compareShardAgainstMain 反向影子读：主读走了分片时，再读一次主表做对账。

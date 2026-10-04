@@ -113,8 +113,9 @@ func TestSingleModeRoutesToBaseTable(t *testing.T) {
 	}
 
 	// offset 分页（page/page_size）：single 模式下回落主表且不报错
-	if sh, err = offsetListShard(ctx, orderListFilter{}); err != nil || !sh.isZero() {
-		t.Fatalf("single 模式下 offset 分页应回落主表，实际 shard=%q err=%v", sh.suffix, err)
+	src, err := resolveListSource(ctx, orderListFilter{})
+	if err != nil || !src.Main {
+		t.Fatalf("single 模式下 offset 分页应回落主表，实际 %+v err=%v", src, err)
 	}
 
 	// 未配置灰度时，点查与列表都不走分片
@@ -199,13 +200,13 @@ func TestMonthlyModeRouting(t *testing.T) {
 	if !readFromShardByKey(ctx, orderNo) {
 		t.Error("monthly 下点查必须走分片")
 	}
-	// offset 分页：普通条件无法跨片 → 报错；带 order_no 等价点查 → 放行
-	if _, err = offsetListShard(ctx, orderListFilter{}); err == nil {
-		t.Error("monthly 下无 order_no 的 offset 分页应报错")
+	// 带 order_no 的列表等价于点查：直接路由到那一个月（不受月份窗口限制）
+	src, err := resolveListSource(ctx, orderListFilter{OrderNo: orderNo})
+	if err != nil || len(src.Shards) != 1 || src.Shards[0].suffix != "202608" {
+		t.Errorf("monthly 下带 order_no 应路由到 202608，实际 %+v err=%v", src, err)
 	}
-	if sh, err = offsetListShard(ctx, orderListFilter{OrderNo: orderNo}); err != nil || sh.suffix != "202608" {
-		t.Errorf("monthly 下带 order_no 的 offset 分页应路由到 202608，实际 (%q, %v)", sh.suffix, err)
-	}
+	// 注：monthly 下「不带 order_no 的 offset 分页报 7004」「带 month 落在单分片则精确」
+	// 需要真实分片表，放在 tests/test_tx_api.py 的 3.7/3.8 覆盖
 }
 
 // TestDualWriteAndGraySwitches 锁定双写与读灰度的开关语义（single 模式）。

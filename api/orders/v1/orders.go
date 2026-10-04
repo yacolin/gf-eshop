@@ -39,7 +39,12 @@ type OrdersListReq struct {
 	UserID        int64  `json:"user_id"        description:"用户ID"`
 	Status        string `json:"status"          description:"订单状态"`
 	PaymentStatus string `json:"payment_status"  description:"支付状态"`
-	OrderNo       string `json:"order_no"       description:"订单号"`
+	OrderNo       string `json:"order_no"       description:"订单号（点查：不受月份窗口限制）"`
+	// 时间窗口。分表后列表必须带时间范围，否则要跨全部活跃分片 fan-out
+	//（实测一次翻页 = 活跃分片数次查询）。优先级：month > created_from/to > 默认近 N 个月。
+	Month       string `json:"month"        description:"下单月份，形如 202610（路由到单个分片，offset 分页也随之精确）"`
+	CreatedFrom string `json:"created_from" description:"下单日期起（含），形如 2026-08-01"`
+	CreatedTo   string `json:"created_to"   description:"下单日期止（含），形如 2026-10-31"`
 }
 
 type OrdersListRes struct {
@@ -47,6 +52,12 @@ type OrdersListRes struct {
 	Total int              `json:"total"` // 游标分页时为 -1，表示未统计（分表后 COUNT 需要跨片）
 	// NextCursor 下一页游标；为空表示没有更多。仅在游标分页模式下返回。
 	NextCursor string `json:"next_cursor,omitempty"`
+	// 以下四个字段回显**本次实际生效**的时间窗口：客户端（尤其前端列表）
+	// 应把它显示出来，否则「默认只看近 N 个月」会造成「怎么少了一单」的困惑。
+	AppliedFrom     string   `json:"applied_from,omitempty"     description:"生效窗口起点（含）"`
+	AppliedTo       string   `json:"applied_to,omitempty"       description:"生效窗口终点（含）"`
+	AppliedMonths   []string `json:"applied_months,omitempty"   description:"生效窗口命中的月份（YYYYMM），用于说明本次查询了哪些分片"`
+	WindowDefaulted bool     `json:"window_defaulted,omitempty" description:"true 表示未传时间参数、由后端默认窗口兜底"`
 }
 
 type OrdersDetailReq struct {

@@ -234,6 +234,38 @@ def test_list_orders_cursor(base_url):
     r = req("GET", f"{base_url}/api/v1/orders?size=5&cursor=not-base64!!")
     check(r.get("code") != 0, "3.6 非法游标被拒绝")
 
+    # 3.8 月份窗口：只查一个分片；带 month 后 offset 分页恢复精确
+    #     （不自造月份，从列表里取一张单的月份，保证与当前数据环境无关）
+    r = req("GET", f"{base_url}/api/v1/orders?size=1")
+    if r.get("code") == 0 and r["data"]["list"]:
+        sample = r["data"]["list"][0]
+        month = sample["order_no"][3:9]
+        r = req("GET", f"{base_url}/api/v1/orders?month={month}&size=5")
+        ok(r, f"3.8 按 {month} 查询")
+        if r.get("code") == 0:
+            d = r["data"]
+            check(d.get("applied_months") == [month], "3.8.1 回显命中月份")
+            check(not d.get("window_defaulted"), "3.8.2 显式月份不标记默认窗口")
+            check(any(o["order_no"] == sample["order_no"] for o in d["list"]),
+                  "3.8.3 该月的单确实出现在结果里")
+            check(d.get("applied_from", "").startswith(month[:4]), "3.8.4 回显窗口起点")
+        r = req("GET", f"{base_url}/api/v1/orders?month={month}&page=1&page_size=5")
+        check(r.get("code") == 0 and isinstance(r["data"].get("total"), int) and r["data"]["total"] >= 0,
+              "3.8.5 带 month 后 offset 分页恢复精确（单分片内可偏移）")
+
+        # 3.9 点查不受月份窗口限制（客服拿单号找单）
+        r = req("GET", f"{base_url}/api/v1/orders?order_no={sample['order_no']}&month=202501")
+        check(r.get("code") == 0 and r["data"]["total"] == 1,
+              "3.9 按订单号查询绕开月份窗口")
+
+    # 3.10 不带时间参数：默认窗口兜底 + 回显（避免客户端以为「就只有这么多单」）
+    r = req("GET", f"{base_url}/api/v1/orders?size=5")
+    if r.get("code") == 0:
+        d = r["data"]
+        check(d.get("window_defaulted") is True, "3.10.1 未传时间参数时标记为默认窗口")
+        check(bool(d.get("applied_from")) and bool(d.get("applied_to")), "3.10.2 回显生效区间")
+        check(bool(d.get("applied_months")), "3.10.3 回显命中月份列表")
+
     # 3.7 offset 分页（page/page_size）：single 下回落主表仍可用；
     #     monthly（分表已切终态）下无法跨片归并，必须明确报 7004 而不是给出错的结果
     r = req("GET", f"{base_url}/api/v1/orders?page=1&page_size=5")

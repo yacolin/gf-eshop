@@ -292,11 +292,22 @@ func (s *sOrders) createOnce(
 }
 
 func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.OrdersListRes, err error) {
+	// 先解析时间窗口：分表之后列表必须有时间范围，否则要跨全部活跃分片 fan-out。
+	// 没传就落到默认窗口（近 N 个月），并在响应里回显，避免「怎么少了一单」。
+	window, err := resolveListWindow(ctx, req.Month, req.CreatedFrom, req.CreatedTo, gtime.Now().Time)
+	if err != nil {
+		return nil, err
+	}
+	if req.OrderNo != "" {
+		window = orderListWindow{} // 点查：不套窗口、也不回显（见 listOrdersModel / echoWindow）
+	}
+
 	filter := orderListFilter{
 		UserID:        req.UserID,
 		Status:        req.Status,
 		PaymentStatus: req.PaymentStatus,
 		OrderNo:       req.OrderNo,
+		Window:        window,
 	}
 
 	// 传 cursor 或 size 即走游标（keyset）分页；否则保持原有的 page/page_size 行为
@@ -321,20 +332,24 @@ func (s *sOrders) List(ctx context.Context, req *v1.OrdersListReq) (res *v1.Orde
 		return nil, err
 	}
 	if total == 0 {
-		return &v1.OrdersListRes{
+		res := &v1.OrdersListRes{
 			List:  make([]*entity.Orders, 0),
 			Total: 0,
-		}, nil
+		}
+		echoWindow(res, filter.Window)
+		return res, nil
 	}
 
 	list, err := pageOrders(ctx, filter, page, size)
 	if err != nil {
 		return nil, err
 	}
-	return &v1.OrdersListRes{
+	res = &v1.OrdersListRes{
 		List:  list,
 		Total: int(total),
-	}, nil
+	}
+	echoWindow(res, filter.Window)
+	return res, nil
 }
 
 // listByCursor 游标分页。与 offset 分页的三点差异：
@@ -369,11 +384,26 @@ func (s *sOrders) listByCursor(
 	if len(list) == size {
 		nextCursor = encodeOrderCursor(list[len(list)-1].Id)
 	}
-	return &v1.OrdersListRes{
+	res := &v1.OrdersListRes{
 		List:       list,
 		Total:      -1, // 未统计
 		NextCursor: nextCursor,
-	}, nil
+	}
+	echoWindow(res, filter.Window)
+	return res, nil
+}
+
+// echoWindow 把本次生效的时间窗口回显给客户端。
+//
+// 点查（带 order_no）不套时间窗，因此也不回显 —— 回显一个没生效的区间会误导前端。
+func echoWindow(res *v1.OrdersListRes, w orderListWindow) {
+	if w.FromDay == "" && w.ToDay == "" {
+		return
+	}
+	res.AppliedFrom = w.FromDay
+	res.AppliedTo = w.ToDay
+	res.AppliedMonths = w.Months
+	res.WindowDefaulted = w.Defaulted
 }
 
 func (s *sOrders) Detail(ctx context.Context, req *v1.OrdersDetailReq) (res *v1.OrdersDetailRes, err error) {
