@@ -266,6 +266,10 @@ ORD + YYYYMMDDHHMMSS(14) + 序号(6)      → 23 字符，varchar(32) 放得下
 `decodeOrderID()` 已随 Phase 1 落地并单测覆盖（含月末/年末边界）。
 
 > ✅ **已完成（Phase 2）**：`tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT` 已去掉。
+> ✅ **Phase 5 修订**：`tx_sub_orders.id` / `tx_order_logs.id` **也必须**去掉 —— 分片运维工具
+> （`migrate` / `restore`）是按主键做全列 upsert 的复制，要求主键在**主表与每个分片之间都不重复**；
+> 而分片表由 `CREATE TABLE ... LIKE` 建出、各自从 1 计数，实测 202610 分片的子订单拿到 id `1..6`
+> 与主表 8 月种子数据撞主键。四张表现在统一由应用生成（std-eshop-db 迁移 `V002`）。
 > DDL 归 **schema 源仓库 `std-eshop-db`** 管理（本仓库不放 DDL，避免两个来源）：
 > 基线 `sql/tx_p0.sql`、`sql/tx_p1.sql`、`sql/tx_p5.sql`；
 > 存量库前向升级 `sql/migrations/V001__tx_order_sharding.sql`。
@@ -710,9 +714,13 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 - **已加的护栏**：两个复制工具在复制前做**主键冲突预检**（按业务键判断「同一 id 是否同一行」：
   订单看 `order_no`、子订单看 `sub_order_no`、日志看 `order_id + created_at`），
   命中即拒绝并报出冲突行数，不再静默覆盖。
-- **尚未修的根因**：这两张表的主键仍是各表自增。在修掉之前，**202610 的分片数据无法安全回灌**
-  （预检会拒绝），也就是 Phase 5 的回滚还差最后一步。修法是把它们也改成应用生成的全局唯一 ID
-  （与订单/明细一致），涉及 gf-eshop 的 ID 生成与 std-eshop-db 的 DDL（基线 + 一份前向迁移）。
+- **根因已修**：这两张表的主键也改成应用生成的全局唯一 ID（与订单/明细同一序列、同一布局；
+  段内顺序 订单 → 子订单 → 明细… → 日志），DDL 见 std-eshop-db 的基线 `sql/tx_p0.sql` /
+  `sql/tx_p1.sql` 与前向迁移 `sql/migrations/V002__sub_orders_logs_global_id.sql`。
+  ⚠️ `V002` 不改已存在的分片表，**旧分片要另跑一次同样的 ALTER**（迁移文件头部给了生成语句）。
+- **修完后的实测**（202610，monthly）：建单后四张表主键分别为 `…129/130/131/132`（应用生成、
+  互不相同、与主表无冲突）→ `restore` 预检放行、回灌 5 行 → `verify` 4 项**校验和全对**
+  → 改回 `single` 后这张「只曾在分片里存在」的订单能从主表读到、offset 分页恢复可用。
 
 ### Phase 6：归档旧表
 
