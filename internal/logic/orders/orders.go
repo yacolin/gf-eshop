@@ -214,6 +214,7 @@ func (s *sOrders) createOnce(
 
 		// 创建子订单（子订单号复用同一序列，前缀不同故不冲突；主键仍用自增）
 		subOrderId, err := insertSubOrder(ctx, sh, g.Map{
+			"id":              idn.SubOrderID,
 			"sub_order_no":    subOrderNo,
 			"parent_order_id": orderId,
 			"parent_order_no": orderNo,
@@ -262,6 +263,7 @@ func (s *sOrders) createOnce(
 
 		// 创建订单日志
 		err = insertOrderLog(ctx, sh, g.Map{
+			"id":            idn.LogID,
 			"order_id":      orderId,
 			"order_no":      orderNo,
 			"from_status":   "",
@@ -517,8 +519,13 @@ func (s *sOrders) UpdateStatus(ctx context.Context, req *v1.OrdersUpdateStatusRe
 			return err
 		}
 
-		// 创建订单日志
+		// 创建订单日志（主键同样由应用生成：分片表各自的 AUTO_INCREMENT 会撞主键）
+		logID, err := orderIdentities.nextLogID(ctx, orderNoMode(ctx), now.Time)
+		if err != nil {
+			return err
+		}
 		if err = insertOrderLog(ctx, wsh, g.Map{
+			"id":            logID,
 			"order_id":      order.Id,
 			"order_no":      order.OrderNo,
 			"from_status":   order.Status,

@@ -138,6 +138,8 @@ type orderIdentity struct {
 	OrderNo    string
 	SubOrderNo string
 	OrderID    int64
+	SubOrderID int64   // 子订单主键（与订单同一序列，全局唯一）
+	LogID      int64   // 建单那条操作日志的主键
 	ItemIDs    []int64 // 与入参明细顺序一一对应
 }
 
@@ -159,8 +161,9 @@ var orderIdentities = &identityGen{
 // 序列段一次取够（订单 1 个 + 每条明细 1 个），既省 Redis 往返，
 // 也保证同一订单内的主键互不相同。legacy 模式只是把**单号字符串**换回旧格式，
 // 主键仍走同一个序列，避免回滚开关把主键唯一性一起牺牲掉。
+// 需要的主键个数：订单 + 子订单 + 每条明细 + 建单日志。
 func (g *identityGen) allocate(ctx context.Context, mode string, now time.Time, itemCount int) (*orderIdentity, error) {
-	need := int64(1 + itemCount)
+	need := int64(3 + itemCount)
 	start, err := g.alloc.nextBlock(ctx, now.Format(orderNoTimeGoFmt), need)
 	if err != nil {
 		return nil, errcode.Newf(errcode.CodeOrderNoAllocateFailed,
@@ -180,16 +183,35 @@ func (g *identityGen) allocate(ctx context.Context, mode string, now time.Time, 
 		subOrderNo = fmt.Sprintf("%s%s%04d", subOrderNoPrefix, now.Format(orderNoTimeGoFmt), grand.Intn(10000))
 	}
 
+	// 段内顺序：订单 → 子订单 → 明细… → 日志。
+	// 四张表的主键必须**全局唯一且互不重复**：分片之间、以及分片与主表之间都不能撞
+	// （tx_sub_orders / tx_order_logs 原先各自 AUTO_INCREMENT，分片表从 1 开始计数，
+	// 回灌时会按主键命中无关行 —— 见 docs/order-sharding-design.md §7 Phase 5）。
 	id := &orderIdentity{
 		OrderNo:    orderNo,
 		SubOrderNo: subOrderNo,
 		OrderID:    encodeOrderID(now, start),
+		SubOrderID: encodeOrderID(now, start+1),
+		LogID:      encodeOrderID(now, start+2+int64(itemCount)),
 		ItemIDs:    make([]int64, itemCount),
 	}
 	for i := 0; i < itemCount; i++ {
-		id.ItemIDs[i] = encodeOrderID(now, start+1+int64(i))
+		id.ItemIDs[i] = encodeOrderID(now, start+2+int64(i))
 	}
 	return id, nil
+}
+
+// nextLogID 单独分配一个日志主键（用于状态变更这类「只有一条日志」的写入）。
+func (g *identityGen) nextLogID(ctx context.Context, mode string, now time.Time) (int64, error) {
+	start, err := g.alloc.nextBlock(ctx, now.Format(orderNoTimeGoFmt), 1)
+	if err != nil {
+		return 0, errcode.Newf(errcode.CodeOrderNoAllocateFailed, "分配日志主键失败: %v", err)
+	}
+	if start < 1 || start > orderNoSeqMax {
+		return 0, errcode.Newf(errcode.CodeOrderNoAllocateFailed,
+			"本秒序列已用尽（start=%d, max=%d）", start, orderNoSeqMax)
+	}
+	return encodeOrderID(now, start), nil
 }
 
 // orderNoMode 读取 orderNo.mode，缺省 sequence；非法值按 sequence 处理并告警。

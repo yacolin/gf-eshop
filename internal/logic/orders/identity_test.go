@@ -43,15 +43,38 @@ func TestAllocateOrderNoAndID(t *testing.T) {
 	if want := "SUB20261004130509012345"; idn.SubOrderNo != want {
 		t.Errorf("SubOrderNo = %q, want %q", idn.SubOrderNo, want)
 	}
-	// 主键低 20 位就是分配到的序列，锁住位布局
+	// 主键低 20 位就是分配到的序列，锁住位布局：
+	// 段内顺序是 订单 → 子订单 → 明细… → 日志（四张表的主键必须互不重复）
 	if got := idn.OrderID & orderIDSeqMask; got != 12345 {
-		t.Errorf("主键低 20 位 = %d, want 12345（位布局被改动？）", got)
+		t.Errorf("订单主键低 20 位 = %d, want 12345（位布局被改动？）", got)
 	}
-	if got := idn.ItemIDs[0] & orderIDSeqMask; got != 12346 {
-		t.Errorf("第 1 条明细主键低 20 位 = %d, want 12346", got)
+	if got := idn.SubOrderID & orderIDSeqMask; got != 12346 {
+		t.Errorf("子订单主键低 20 位 = %d, want 12346", got)
 	}
-	if got := idn.ItemIDs[1] & orderIDSeqMask; got != 12347 {
-		t.Errorf("第 2 条明细主键低 20 位 = %d, want 12347", got)
+	if got := idn.ItemIDs[0] & orderIDSeqMask; got != 12347 {
+		t.Errorf("第 1 条明细主键低 20 位 = %d, want 12347", got)
+	}
+	if got := idn.ItemIDs[1] & orderIDSeqMask; got != 12348 {
+		t.Errorf("第 2 条明细主键低 20 位 = %d, want 12348", got)
+	}
+	if got := idn.LogID & orderIDSeqMask; got != 12349 {
+		t.Errorf("日志主键低 20 位 = %d, want 12349", got)
+	}
+	// 四个主键必须两两不同，且都能按 id 反解出同一个秒
+	ids := []int64{idn.OrderID, idn.SubOrderID, idn.ItemIDs[0], idn.ItemIDs[1], idn.LogID}
+	idSeen := map[int64]bool{}
+	for _, id := range ids {
+		if idSeen[id] {
+			t.Errorf("主键重复: %d", id)
+		}
+		idSeen[id] = true
+		if id < legacyOrderIDMax {
+			t.Errorf("主键 %d 小于 legacyOrderIDMax，会被判为老自增主键", id)
+		}
+		got, ok := decodeOrderID(id)
+		if !ok || !got.Equal(now) {
+			t.Errorf("主键 %d 反解时间 = %v (ok=%v), want %v", id, got, ok, now)
+		}
 	}
 
 	// 单号必须能被路由层解析，且解析出的时间与主键解出的时间同月
@@ -129,13 +152,13 @@ func TestAllocateLegacyStillHasUniqueIDs(t *testing.T) {
 	if a.OrderID == b.OrderID {
 		t.Error("legacy 模式两次分配的主键相同（说明主键也退回了随机，不应如此）")
 	}
-	// 主键低 20 位应来自序列。每次建单取 1+itemCount=2 个号，
-	// 所以两次分配的订单主键序列位分别是 1 和 3。
+	// 主键低 20 位应来自序列。每次建单取 3+itemCount=4 个号（订单/子订单/明细/日志），
+	// 所以两次分配的订单主键序列位分别是 1 和 5。
 	if got := a.OrderID & orderIDSeqMask; got != 1 {
 		t.Errorf("首次主键序列位 = %d, want 1", got)
 	}
-	if got := b.OrderID & orderIDSeqMask; got != 3 {
-		t.Errorf("第二次主键序列位 = %d, want 3", got)
+	if got := b.OrderID & orderIDSeqMask; got != 5 {
+		t.Errorf("第二次主键序列位 = %d, want 5", got)
 	}
 }
 
@@ -270,5 +293,32 @@ func TestDecodeOrderIDRoundTrip(t *testing.T) {
 		if decoded, ok := decodeOrderID(legacy); ok {
 			t.Errorf("老自增主键 %d 不应被反解成功（得到 %v）", legacy, decoded)
 		}
+	}
+}
+
+// TestNextLogID 锁定「状态变更时单独分配日志主键」的行为：
+// 与批量分配同源同布局，且与订单主键同秒可反解。
+func TestNextLogID(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 4, 13, 5, 9, 0, time.Local)
+	// 用真实的每秒计数器：要验证的核心是「两次分配会各自推进序列」
+	gen := &identityGen{alloc: &localSeqAllocator{}}
+
+	first, err := gen.nextLogID(ctx, orderNoModeSequence, now)
+	if err != nil {
+		t.Fatalf("nextLogID 失败: %v", err)
+	}
+	second, err := gen.nextLogID(ctx, orderNoModeSequence, now)
+	if err != nil {
+		t.Fatalf("nextLogID 失败: %v", err)
+	}
+	if first == second {
+		t.Error("两次分配的日志主键相同")
+	}
+	if first&orderIDSeqMask != 1 || second&orderIDSeqMask != 2 {
+		t.Errorf("日志主键序列位 = %d/%d, want 1/2", first&orderIDSeqMask, second&orderIDSeqMask)
+	}
+	if got, ok := decodeOrderID(first); !ok || !got.Equal(now) {
+		t.Errorf("日志主键反解时间 = %v (ok=%v), want %v", got, ok, now)
 	}
 }
