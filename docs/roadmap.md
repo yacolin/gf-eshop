@@ -22,13 +22,12 @@
 
 ### 1.2 `git push`
 
-`origin/main` 停在 `c450516`，本地领先 3 个提交，**未推送**且不需要 force-push：
+本地领先 `origin/main`，**未推送**（无 force-push 需求）。截至订单分表 Phase 1 完成时
+领先 8 个提交：`c466686`、`08b0416` + 本轮 6 个（`d998a47`、`a7a7359`、`ea94fb2`、
+`bfa5525`、`6e7c1ac`、`a3c87e6`）。
 
-```
-fb403e0  feat(search): 将 ES 方案落地到 products（名称搜索 + 价格区间）
-7b9f12b  feat(search): 接入 Elasticsearch，brands 筛选查询走 ES
-a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   ← 你原有的未推送提交
-```
+> 2026-10-04 更正：本节原先写的「停在 `c450516`、领先 3 个（`fb403e0`/`7b9f12b`/`a2e630b`）」
+> 已过期 —— 那三个提交早已在 `origin/main` 上。
 
 ### 1.3 订单分表方案（待决策）
 
@@ -38,9 +37,12 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 | **方案** | [`docs/order-sharding-design.md`](order-sharding-design.md) |
 | **结论** | **应用层按月分表 + `order_no` 路由**。本库单号已内嵌创建时间（实测 2000/2000 条满足），路由零映射表；且**只分表不分库**，建单四表事务保持原子 |
 | **为什么不是原生分区** | 本项目订单查询全部按 `order_no`（WHERE 里没有 `created_at`）→ MySQL 分区裁剪完全失效，每次扫 36 个分区 |
-| **建议节奏** | 当前仅 2000 单 / 0.4 MB，**先只做 Phase 0**（repo 抽象 + 路由留口，行为零变化，可 revert），触阈值再切分片 |
+| **建议节奏** | 当前仅 2000 单 / 0.4 MB，**先做 Phase 0（可切换抽象）与 Phase 1（标识生成器）** —— 两者均已完成；Phase 2~4 等触到阈值再启动 |
 | **Phase 0 状态** | ✅ **已完成**（2026-10-04）。订单域 SQL 全部收敛进 `internal/logic/orders/repo_*.go`，新增路由层 `shard.go`（配置 `orderShard.mode`，默认 `single`）；`logic/payments`、`logic/dashboard` 已收回对订单表/DAO 的直接访问，改走 `service.Orders()`。**A/B 验证**：与 HEAD 逐字段对比 14 项（详情/列表筛选/翻页/错误路径/看板聚合）**零差异**；写路径另做 30+ 项 SQL 回查。路由契约测试见 `internal/logic/orders/shard_test.go` |
-| **Phase 1 阻塞原因** | 需业务表态三件事：① 单号内嵌时间（可路由）vs 泄漏单量；② 列表 `total` / 游标分页的前端改动；③ 粒度按月还是按季 |
+| **Phase 1 阻塞原因** | 需业务表态三件事：① ~~单号内嵌时间（可路由）vs 泄漏单量~~ **已定：内嵌时间**；② 列表 `total` / 游标分页的前端改动（Phase 2~4 再谈）；③ ~~粒度按月还是按季~~ **已定：按月** |
+| **Phase 1 状态** | ✅ **已完成**（`bfa5525`）。单号改为 `ORD + YYYYMMDDHHMMSS + 每秒序列(6)`（Redis `INCRBY` + 降级 + 唯一键冲突重试）；`tx_orders.id` / `tx_order_items.id` 改为显式全局唯一 ID。**实测**：100 并发建单零重号；单号内嵌时间 ↔ 主键反解时间**秒级一致 100/100**；主键全部 < 2^53-1；可控撞号自动重试成功；Redis 不可用仍可建单；读路径与 Phase 0 对比 14 项零差异 |
+| **Phase 1 对设计文档的两处修正** | ① 原方案用 41 位毫秒雪花，会超过 JS 安全整数（2^53-1）导致前端**静默丢精度** → 改为 51 位「分钟(25)\|秒(6)\|序列(20)」布局；② `tx_order_items.id` 也被 `delivery_items` / `after_sales` 引用，**只换订单主键不够**，两张表都要换（原文档遗漏） |
+| **Phase 2 前置** | 所有写入方都改成显式主键后，需去掉 `tx_orders.id` / `tx_order_items.id` 的 `AUTO_INCREMENT`，否则漏改的写入路径会拿到一个不含时间位的巨大自增值 |
 | **Phase 0 修正了文档一处错误** | GoFrame 的 `Insert` 会**无条件覆盖** `created_at`（`gdb_model_insert.go:311-321`），实测同一次建单四表相差 2~4 ms → 设计文档「三者必然同月」在月份级成立、毫秒级**不成立**，Phase 2 必须按文档 §5.3 的方案 A（`.Unscoped()`）处理跨月窗口 |
 | **顺带发现（前置必修）** | `generateOrderNo()` 后 4 位是 `rand(10000)`，@10 万单/日 **日均碰撞期望 5.8 次**、峰值秒内 86% —— 撞 `uk_order_no` 会让用户下单直接失败。修法（每秒序列）与路由天然统一 |
 | **改造面** | 业务代码只有 3 个文件（`logic/orders`、`logic/payments`、`logic/dashboard`）共 35 处引用，比看上去小 |
@@ -80,7 +82,7 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 | **修法** | 在 `manifest/config/` 下提供一份可提交的模板（如 `config.example.yaml`），或在 README/本文档中明确列出需要新增的 `elasticsearch` 段 |
 | **验证** | 按模板配置后，启动日志应出现「索引与 DB 一致，跳过重建」而非静默跳过 |
 
-### 2.4 【P0】订单创建接口完全不可用（代码与库中库存数据不一致）
+### 2.4 【P0】订单创建接口完全不可用（代码与库中库存数据不一致）✅ 已修复 `bfa5525`
 
 | 项 | 内容 |
 |----|------|
@@ -88,19 +90,21 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 | **根因** | `internal/logic/orders/orders.go` 的 `Create` 查库存时写死 `Where(warehouse_id, 0)`，而库里 7942 行 `sp_inventories` **全部是 `warehouse_id = 1`**（0 行）→ GoFrame 的 `Scan` 在无记录时返回 `sql.ErrNoRows`，紧随其后的 `if err != nil { return err }` 把原始错误抛成 500，**作者本意的 `CodeInsufficientStock` 分支永远走不到** |
 | **影响面** | 订单域写入链路全线不通。**这解释了为什么 `tx_order_logs` 是空表、2000 条订单只能直接灌库** —— 建单接口从未成功过 |
 | **性质** | **接入分表之前就存在**。Phase 0 用 HEAD 建基线服务实测：同一个请求返回**逐字相同**的 500，与订单分表重构无关 |
-| **修法（二选一，需业务表态）** | ① 数据侧：为默认仓补 `warehouse_id = 0` 的库存行（要确认「默认仓」是不是业务概念）；② 代码侧：改为按 SKU 实际仓库/配置的默认仓库查询。**无论哪种，都应把 `Scan` 的 `sql.ErrNoRows` 与 `inv.Id == 0` 区分开**，否则「库存不足」永远报不出来 |
-| **验证** | 建单返回 0 并落库四张表；库存不足时返回 `CodeInsufficientStock(1024)` 而不是 500 |
+| **修法（已实施）** | 代码侧：不再写死任何仓库 id，改为按 `sku_id` 选一个有足够可用量的仓库行（`OrderAsc(warehouse_id)`），并显式区分 `sql.ErrNoRows` 与真实 DB 错误。历史背景：库里 `sp_warehouses` 只有「默认仓库」id=1，而 `inventories` 模块里 `WarehouseId > 0` 的写法说明 **0 在本项目是「未指定/全部」的过滤约定**，不是仓库 id |
+| **附带修复** | ① SKU 查询有同样的 `sql.ErrNoRows` 问题 →「SKU不存在」现在才会真的返回 `CodeSKUNotFound`；② 预占库存的 `Increment` 一直没检查 `RowsAffected`，并发下会被静默超卖 → 现在按库存不足处理 |
+| **验证** | `tests/test_tx_api.py` 建单/详情/列表/状态流转全部通过；100 并发建单全部成功且库存预占正确 |
 
-### 2.5 【P0】JSON 列被写入非法值（同类缺陷，至少 2 处触发 + 2 处隐患）
+### 2.5 【P0】数据库约束与代码写入不匹配（一类缺陷，实际触发 4 处）✅ 已修复 `ea94fb2` `bfa5525`
 
 | 项 | 内容 |
 |----|------|
-| **现象** | 建单过了库存那关后接着 500：`Error 3140: Invalid JSON text ... for column 'tx_order_items.sku_spec'`；支付创建同样失败：`Error 3140 ... column 'tx_payments.channel_response'` |
-| **根因** | 这些列是 MySQL **JSON** 类型，但代码写的是普通字符串：`orders.go` 把规格摘要（`"白色 / 128G / 4G"`）写进 `tx_order_items.sku_spec`（JSON），而 `sp_skus` 里**只有 `spec_summary` varchar、没有对应 JSON 列**；`payments.go` 把 `""` 写进 `tx_payments.channel_response`（JSON） |
-| **影响面** | 建单、创建支付均不可用。同类的 `tx_refunds.channel_response`、`tx_cart_items.sku_spec` 是**同一写法，尚未触发但必然同病** |
-| **性质** | 同为 HEAD 既有缺陷。基线服务实测返回同一个 `code=52 / Error 3140` |
-| **修法** | ① 文本规格写进 `sku_spec_summary`（varchar），JSON 列留 `NULL` 或写真正合法的 JSON；② `channel_response` 初始值用 `NULL`（列可空）或 `'{}'`；③ 顺带把 `tx_refunds` / `tx_cart_items` 一起改掉；④ 建议加一条回归：对全部 JSON 列写入空串/非 JSON 必须失败在测试而不是线上 |
-| **验证** | 建单、创建支付、创建退款、加购物车四条路径全部返回 0 |
+| **现象** | 建单过了库存那关后接着 500：`Error 3140: Invalid JSON text ... for column 'tx_order_items.sku_spec'`；创建支付、创建退款也各自失败 |
+| **根因** | 表结构与代码写法不匹配，共四类：<br>① **JSON 列写纯文本/空串**：`tx_order_items.sku_spec`、`tx_payments.channel_response`、`tx_refunds.channel_response`、`tx_cart_items.sku_spec` → `Error 3140`<br>② **NOT NULL 无默认值的列整条没写**：`tx_refunds.idempotency_key` → `Error 1364`<br>③ **可空+唯一列写空串**：`tx_refunds.channel_refund_id` → 第二条退款撞 `Duplicate entry ''`（`sp_skus.barcode` 早在 `3d71668` 踩过同一个坑）<br>④ **`Scan` 无记录返回 `sql.ErrNoRows` 被当成 DB 错误**：见 §2.4 |
+| **影响面** | 建单、创建支付、创建退款、加购物车**四条写入路径全部不可用**，且一直没有用例覆盖到 —— 与 §2.4 合起来就是「交易域写入链路从未跑通过」 |
+| **性质** | 均为 HEAD 既有缺陷。基线服务实测返回同一批错误（`52/3140`、`1364`、`1062`） |
+| **修法（已实施）** | ① 规格摘要写 `sku_spec_summary`（varchar），JSON 列留 `NULL`；`channel_response` 不写；`tx_cart_items` 没有 varchar 摘要列，暂留 `NULL` + TODO（结构化快照需从 `sp_sku_specs` 组装）<br>② `idempotency_key` 暂用退款单号占位（接口没有幂等键入参，真正幂等应由调用方传）<br>③ `channel_refund_id` 留 `NULL` 等渠道回执再填 |
+| **验证** | `tests/test_tx_api.py` 28/28 通过且**连续两次运行都通过**（可重复执行）；脚本里硬编码的唯一 `transaction_id` 一并修掉 |
+| **防复发** | 本次已用 `information_schema` 全量比对「可空+唯一」列与代码里的 `"col": ""` 写法；后续新增写入路径应把建支付/退款/加购物车纳入回归 |
 
 ---
 
@@ -114,6 +118,10 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 | 修复降级兜底查询缺 `id DESC` | `7b9f12b` | 库中 23 组 `sort_order` 重复，兜底路径排序与缓存路径不一致，实测前 20 条有 6 个位置不同 |
 | 修复 ngram 检索侧分析器 | `fb403e0` | `keyword` → 与索引侧同 tokenizer + `operator=and`；修好含空格的商品名（`三星e 青春版`）与含撇号的品牌名（`Arc'teryx`） |
 | 建立测试基线 | `fb403e0` | products 16 用例对账、全量游标翻页、价格联动、降级、双写均已实测 |
+| 订单分表 Phase 0（可切换抽象） | `d998a47` | 订单域 SQL 收敛进 `repo_*.go` + 分片路由骨架（默认 single，行为零变化）；payments/dashboard 收回直接访问；A/B 对比 14 项零差异 |
+| 订单分表 Phase 1（标识生成器） | `bfa5525` | 单号 `ORD+时间+每秒序列`；订单/明细主键改 51 位全局唯一 ID（JS 安全）；Redis 降级 + 撞号重试；100 并发零重号 |
+| 修复交易域 4 处写入约束冲突（P0） | `ea94fb2` `bfa5525` | 见 §2.5：JSON 列、NOT NULL、可空+唯一、`Scan` ErrNoRows 四类；建单/支付/退款/加购四条路径恢复可用 |
+| 修复订单接口测试（鉴权 + 可重复执行） | `6e7c1ac` | 业务接口改用用户令牌（原先用 staff 令牌必然 401）；`transaction_id` 不再硬编码；28/28 且可重复执行 |
 
 ---
 
