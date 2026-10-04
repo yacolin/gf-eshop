@@ -30,6 +30,21 @@ fb403e0  feat(search): 将 ES 方案落地到 products（名称搜索 + 价格�
 a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   ← 你原有的未推送提交
 ```
 
+### 1.3 订单分表方案（待决策）
+
+| 项 | 内容 |
+|----|------|
+| **背景** | 订单数据预期增长，需决定分表方式与落地节奏。设计按 **10 万单/日、保留 3 年**（3 年约 2.66 亿行 / 266 GiB） |
+| **方案** | [`docs/order-sharding-design.md`](order-sharding-design.md) |
+| **结论** | **应用层按月分表 + `order_no` 路由**。本库单号已内嵌创建时间（实测 2000/2000 条满足），路由零映射表；且**只分表不分库**，建单四表事务保持原子 |
+| **为什么不是原生分区** | 本项目订单查询全部按 `order_no`（WHERE 里没有 `created_at`）→ MySQL 分区裁剪完全失效，每次扫 36 个分区 |
+| **建议节奏** | 当前仅 2000 单 / 0.4 MB，**先只做 Phase 0**（repo 抽象 + 路由留口，行为零变化，可 revert），触阈值再切分片 |
+| **Phase 0 状态** | ✅ **已完成**（2026-10-04）。订单域 SQL 全部收敛进 `internal/logic/orders/repo_*.go`，新增路由层 `shard.go`（配置 `orderShard.mode`，默认 `single`）；`logic/payments`、`logic/dashboard` 已收回对订单表/DAO 的直接访问，改走 `service.Orders()`。**A/B 验证**：与 HEAD 逐字段对比 14 项（详情/列表筛选/翻页/错误路径/看板聚合）**零差异**；写路径另做 30+ 项 SQL 回查。路由契约测试见 `internal/logic/orders/shard_test.go` |
+| **Phase 1 阻塞原因** | 需业务表态三件事：① 单号内嵌时间（可路由）vs 泄漏单量；② 列表 `total` / 游标分页的前端改动；③ 粒度按月还是按季 |
+| **Phase 0 修正了文档一处错误** | GoFrame 的 `Insert` 会**无条件覆盖** `created_at`（`gdb_model_insert.go:311-321`），实测同一次建单四表相差 2~4 ms → 设计文档「三者必然同月」在月份级成立、毫秒级**不成立**，Phase 2 必须按文档 §5.3 的方案 A（`.Unscoped()`）处理跨月窗口 |
+| **顺带发现（前置必修）** | `generateOrderNo()` 后 4 位是 `rand(10000)`，@10 万单/日 **日均碰撞期望 5.8 次**、峰值秒内 86% —— 撞 `uk_order_no` 会让用户下单直接失败。修法（每秒序列）与路由天然统一 |
+| **改造面** | 业务代码只有 3 个文件（`logic/orders`、`logic/payments`、`logic/dashboard`）共 35 处引用，比看上去小 |
+
 ---
 
 ## 二、高优先级（无阻塞，建议尽快）
@@ -64,6 +79,28 @@ a2e630b  refactor(products): 拆分商品逻辑为仓储/组装/规则分层   �
 | **后果** | 队友拉代码后 `elasticsearch.enabled` 取默认值 `false`，**静默回落 MySQL**（不报错，但 ES 完全没生效），排查起来很费时间 |
 | **修法** | 在 `manifest/config/` 下提供一份可提交的模板（如 `config.example.yaml`），或在 README/本文档中明确列出需要新增的 `elasticsearch` 段 |
 | **验证** | 按模板配置后，启动日志应出现「索引与 DB 一致，跳过重建」而非静默跳过 |
+
+### 2.4 【P0】订单创建接口完全不可用（代码与库中库存数据不一致）
+
+| 项 | 内容 |
+|----|------|
+| **现象** | `POST /api/v1/orders` 一律 500：`{"code":500,"message":"sql: no rows in result set"}`。**用户根本下不了单** |
+| **根因** | `internal/logic/orders/orders.go` 的 `Create` 查库存时写死 `Where(warehouse_id, 0)`，而库里 7942 行 `sp_inventories` **全部是 `warehouse_id = 1`**（0 行）→ GoFrame 的 `Scan` 在无记录时返回 `sql.ErrNoRows`，紧随其后的 `if err != nil { return err }` 把原始错误抛成 500，**作者本意的 `CodeInsufficientStock` 分支永远走不到** |
+| **影响面** | 订单域写入链路全线不通。**这解释了为什么 `tx_order_logs` 是空表、2000 条订单只能直接灌库** —— 建单接口从未成功过 |
+| **性质** | **接入分表之前就存在**。Phase 0 用 HEAD 建基线服务实测：同一个请求返回**逐字相同**的 500，与订单分表重构无关 |
+| **修法（二选一，需业务表态）** | ① 数据侧：为默认仓补 `warehouse_id = 0` 的库存行（要确认「默认仓」是不是业务概念）；② 代码侧：改为按 SKU 实际仓库/配置的默认仓库查询。**无论哪种，都应把 `Scan` 的 `sql.ErrNoRows` 与 `inv.Id == 0` 区分开**，否则「库存不足」永远报不出来 |
+| **验证** | 建单返回 0 并落库四张表；库存不足时返回 `CodeInsufficientStock(1024)` 而不是 500 |
+
+### 2.5 【P0】JSON 列被写入非法值（同类缺陷，至少 2 处触发 + 2 处隐患）
+
+| 项 | 内容 |
+|----|------|
+| **现象** | 建单过了库存那关后接着 500：`Error 3140: Invalid JSON text ... for column 'tx_order_items.sku_spec'`；支付创建同样失败：`Error 3140 ... column 'tx_payments.channel_response'` |
+| **根因** | 这些列是 MySQL **JSON** 类型，但代码写的是普通字符串：`orders.go` 把规格摘要（`"白色 / 128G / 4G"`）写进 `tx_order_items.sku_spec`（JSON），而 `sp_skus` 里**只有 `spec_summary` varchar、没有对应 JSON 列**；`payments.go` 把 `""` 写进 `tx_payments.channel_response`（JSON） |
+| **影响面** | 建单、创建支付均不可用。同类的 `tx_refunds.channel_response`、`tx_cart_items.sku_spec` 是**同一写法，尚未触发但必然同病** |
+| **性质** | 同为 HEAD 既有缺陷。基线服务实测返回同一个 `code=52 / Error 3140` |
+| **修法** | ① 文本规格写进 `sku_spec_summary`（varchar），JSON 列留 `NULL` 或写真正合法的 JSON；② `channel_response` 初始值用 `NULL`（列可空）或 `'{}'`；③ 顺带把 `tx_refunds` / `tx_cart_items` 一起改掉；④ 建议加一条回归：对全部 JSON 列写入空串/非 JSON 必须失败在测试而不是线上 |
+| **验证** | 建单、创建支付、创建退款、加购物车四条路径全部返回 0 |
 
 ---
 
