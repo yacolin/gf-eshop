@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
@@ -118,6 +119,9 @@ var (
 				service.Dashboard().StartPeriodicRefresh(ctx)
 				// 验证码渠道配置自检：只告警不阻断启动
 				warnVerifyConfigIfNeeded(ctx)
+
+				// 订单主表自检：Phase 6 归档后若还停在 single 模式，订单接口会持续失败
+				ordersLogic.CheckBaseTablesForMode(ctx)
 
 			// 创建并启动 WebSocket Hub
 			wsHub := ws.NewHub()
@@ -241,7 +245,7 @@ var (
 func init() {
 	if err := Main.AddCommand(&gcmd.Command{
 		Name:  "shard",
-		Usage: "shard --action=create|migrate|restore|verify --from=2026-08 --to=2026-09 [--batch=5000]",
+		Usage: "shard --action=create|migrate|restore|verify|archive|purge --from=2026-08 --to=2026-09 [--suffix=202610] [--batch=5000] [--force]",
 		Brief: "订单分表运维：建分片 / 迁移历史 / 回灌主表(回滚) / 三重对账（见 docs/order-sharding-design.md §7）",
 		Func: func(ctx context.Context, parser *gcmd.Parser) error {
 			// 同 reindex：GoFrame 的 gcmd 会把多余的位置参数当成多级命令名，只能用选项传参
@@ -249,10 +253,18 @@ func init() {
 				action = strings.TrimSpace(parser.GetOpt("action", "").String())
 				from   = strings.TrimSpace(parser.GetOpt("from", "").String())
 				to     = strings.TrimSpace(parser.GetOpt("to", "").String())
+				suffix string
+				force  bool
 				batch  = parser.GetOpt("batch", 5000).Int()
 			)
-			if from == "" || to == "" {
-				return gerror.New("必须指定 --from 与 --to（形如 2026-08）")
+			suffix = strings.TrimSpace(parser.GetOpt("suffix", "").String())
+			force = parser.GetOpt("force", false).Bool()
+
+			// archive / purge 用后缀定位归档表，不需要月份区间
+			if action != "archive" && action != "purge" {
+				if from == "" || to == "" {
+					return gerror.New("必须指定 --from 与 --to（形如 2026-08）")
+				}
 			}
 
 			switch action {
@@ -313,8 +325,38 @@ func init() {
 				g.Log().Infof(ctx, "对账全部通过（%d 项）", len(report.Checks))
 				return nil
 
+			case "archive":
+				// Phase 6：把四张主表改名为归档表（无损性预检通过才动手）
+				report, err := ordersLogic.ArchiveBaseTables(ctx, suffix)
+				if err != nil {
+					return err
+				}
+				for _, p := range report.Renamed {
+					g.Log().Infof(ctx, "归档 %s → %s", p[0], p[1])
+				}
+				g.Log().Infof(ctx, "归档完成（后缀 %s）。观察窗口内可这样回滚：%s",
+					report.Suffix, report.RollbackSQL())
+				return nil
+
+			case "purge":
+				// 清理归档表：不加 --force 只预览 DROP 语句
+				report, err := ordersLogic.PurgeLegacyTables(ctx, suffix, force, time.Now())
+				if err != nil {
+					return err
+				}
+				for _, s := range report.Statements {
+					g.Log().Infof(ctx, "%s", s)
+				}
+				if len(report.Dropped) == 0 {
+					g.Log().Infof(ctx, "以上为预览（未删除）。观察窗口最早结束于 %s；确认无需回滚后加 --force 执行",
+						report.AllowedAt.Format("2006-01-02"))
+					return nil
+				}
+				g.Log().Infof(ctx, "已删除 %d 张归档表", len(report.Dropped))
+				return nil
+
 			default:
-				return gerror.Newf("未知 --action=%q，可选：create、migrate、verify", action)
+				return gerror.Newf("未知 --action=%q，可选：create、migrate、restore、verify、archive、purge", action)
 			}
 		},
 	}); err != nil {

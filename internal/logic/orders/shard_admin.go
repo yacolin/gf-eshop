@@ -77,6 +77,47 @@ func parseMonth(v string) (time.Time, error) {
 	return t, nil
 }
 
+// shardTemplate 返回建分片表时要 LIKE 的模板表（exclude 是目标表名，必须排除）。
+//
+// 优先主表；**主表已归档（Phase 6）时依次回退**到「最新分片表」→「最新归档表」。
+// 没有这个回退就会踩到：归档之后月初滚动要建新月份分片，
+// `CREATE TABLE ... LIKE tx_orders` 直接报 Error 1146（表不存在），monthly 跑不下去。
+//
+// ⚠️ 模板只保证「结构来自当前存在的某张同类表」；如果期间有基线结构变更，
+// 已存在的分片仍需要按 V00N 迁移里的说明手工 ALTER。
+func shardTemplate(ctx context.Context, base, exclude string) (string, error) {
+	if ok, err := tableExists(ctx, base); err != nil {
+		return "", err
+	} else if ok && base != exclude {
+		return base, nil
+	}
+	shards, err := activeShards(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := len(shards) - 1; i >= 0; i-- {
+		candidate := shards[i].table(base)
+		if candidate == exclude { // 不能拿目标表自己当模板（LIKE 会报 Not unique table/alias）
+			continue
+		}
+		if ok, err := tableExists(ctx, candidate); err != nil {
+			return "", err
+		} else if ok {
+			return candidate, nil
+		}
+	}
+	if suffix, ok := findLegacySuffix(ctx, base); ok {
+		candidate := legacyTableName(base, suffix)
+		if ok, err := tableExists(ctx, candidate); err != nil {
+			return "", err
+		} else if ok {
+			return candidate, nil
+		}
+	}
+	return "", errcode.Newf(errcode.CodeNotFound,
+		"找不到建分片用的模板表：主表 %s 不存在，也没有任何分片表或归档表可用", base)
+}
+
 // ── 分片表的存在性保障与活跃分片 ─────────────────────────────────────────
 
 // ensuredShards 记录本次进程内已确认存在的分片，避免每次写入都做 DDL 探测。
@@ -95,7 +136,17 @@ func EnsureShardTables(ctx context.Context, sh shard) error {
 	}
 	for _, base := range shardedTables {
 		table := sh.table(base)
-		if _, err := g.DB().Exec(ctx, "CREATE TABLE IF NOT EXISTS `"+table+"` LIKE `"+base+"`"); err != nil {
+		// 已存在就什么都不做：既省一次 DDL，也避免「拿自己当模板」
+		if ok, err := tableExists(ctx, table); err != nil {
+			return err
+		} else if ok {
+			continue
+		}
+		tmpl, err := shardTemplate(ctx, base, table)
+		if err != nil {
+			return err
+		}
+		if _, err = g.DB().Exec(ctx, "CREATE TABLE IF NOT EXISTS `"+table+"` LIKE `"+tmpl+"`"); err != nil {
 			return fmt.Errorf("自动创建分片表 %s 失败: %w", table, err)
 		}
 	}
@@ -190,8 +241,12 @@ func CreateShards(ctx context.Context, from, to string) ([]string, error) {
 		sh := shard{suffix: span.YM}
 		for _, base := range shardedTables {
 			table := sh.table(base)
-			// 用 LIKE 复制主表结构，保证分片与主表结构永远一致
-			if _, err = g.DB().Exec(ctx, "CREATE TABLE IF NOT EXISTS `"+table+"` LIKE `"+base+"`"); err != nil {
+			// 用 LIKE 复制模板表结构，保证分片与基线结构一致
+			tmpl, terr := shardTemplate(ctx, base, table)
+			if terr != nil {
+				return created, terr
+			}
+			if _, err = g.DB().Exec(ctx, "CREATE TABLE IF NOT EXISTS `"+table+"` LIKE `"+tmpl+"`"); err != nil {
 				return created, fmt.Errorf("创建分片表 %s 失败: %w", table, err)
 			}
 			created = append(created, table)
@@ -226,6 +281,9 @@ func MigrateShards(ctx context.Context, from, to string, batch int) (*MigrationR
 		return nil, errcode.Newf(errcode.CodeShardMaintenanceRefused,
 			"orderShard.mode=monthly 时禁止执行 migrate：主表已停写，"+
 				"迁移方向是「主表 → 分片」，重跑会把分片里的新数据覆盖成过期快照")
+	}
+	if err := assertBaseTablesPresent(ctx, "迁移（migrate）"); err != nil {
+		return nil, err
 	}
 	if batch <= 0 {
 		batch = 5000
@@ -466,6 +524,10 @@ func RestoreToBase(ctx context.Context, from, to string, batch int) (*RestoreRep
 				"single 模式下分片可能落后于主表，回灌会拿旧快照覆盖主表。"+
 				"回滚顺序应为 restore → verify → 再把 mode 改回 single")
 	}
+	// 归档后主表已改名，回灌没有目标了
+	if err := assertBaseTablesPresent(ctx, "回灌（restore）"); err != nil {
+		return nil, err
+	}
 	if batch <= 0 {
 		batch = 5000
 	}
@@ -503,6 +565,10 @@ func VerifyShards(ctx context.Context, from, to string) (*VerificationReport, er
 	if shardMode(ctx) == shardModeMonthly {
 		g.Log().Warningf(ctx,
 			"orderShard.mode=monthly：主表已停写，本次对账的差异包含「切换分片后被改过的行」，属预期现象")
+	}
+	// 对账是「主表 vs 分片」，主表归档后就没有可比对象了
+	if err := assertBaseTablesPresent(ctx, "对账（verify）"); err != nil {
+		return nil, err
 	}
 	spans, err := parseMonthSpans(from, to)
 	if err != nil {
