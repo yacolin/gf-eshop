@@ -2,6 +2,7 @@ package orders
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -239,5 +240,29 @@ func TestDualWriteAndGraySwitches(t *testing.T) {
 	setShardConfig(t, shardModeSingle, false, 0, 0)
 	if readFromShardByKey(ctx, orderNo) || readShardsForList(ctx) {
 		t.Error("读灰度 0% 时点查与列表都不应走分片")
+	}
+}
+
+// TestMaintenanceGuards 锁定两个方向相反的运维动作的守卫：
+// migrate 只在非终态允许，restore 只在终态允许 —— 方向搞反就会毁数据。
+//
+// 守卫都在访问数据库之前返回，因此这两个用例不需要数据库。
+func TestMaintenanceGuards(t *testing.T) {
+	ctx := context.Background()
+
+	// single（主表是真相源）：migrate 放行、restore 拒绝
+	setShardConfig(t, shardModeSingle, false, 0, 0)
+	if _, err := RestoreToBase(ctx, "2026-10", "2026-10", 0); err == nil {
+		t.Error("single 模式下 restore 必须被拒绝（会把主表覆盖成分片快照）")
+	} else if !strings.Contains(err.Error(), "monthly") {
+		t.Errorf("拒绝原因应说明只在 monthly 下可用，实际: %v", err)
+	}
+
+	// monthly（主表已停写）：migrate 拒绝、restore 放行（这里只验拒绝那一侧，放行会访问数据库）
+	setShardConfig(t, shardModeMonthly, false, 100, 0)
+	if _, err := MigrateShards(ctx, "2026-10", "2026-10", 0); err == nil {
+		t.Error("monthly 模式下 migrate 必须被拒绝（会用过期主表覆盖分片）")
+	} else if !strings.Contains(err.Error(), "monthly") {
+		t.Errorf("拒绝原因应说明终态禁止迁移，实际: %v", err)
 	}
 }

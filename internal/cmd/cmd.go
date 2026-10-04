@@ -241,8 +241,8 @@ var (
 func init() {
 	if err := Main.AddCommand(&gcmd.Command{
 		Name:  "shard",
-		Usage: "shard --action=create|migrate|verify --from=2026-08 --to=2026-09 [--batch=5000]",
-		Brief: "订单分表运维：建分片 / 迁移历史 / 三重对账（见 docs/order-sharding-design.md §7）",
+		Usage: "shard --action=create|migrate|restore|verify --from=2026-08 --to=2026-09 [--batch=5000]",
+		Brief: "订单分表运维：建分片 / 迁移历史 / 回灌主表(回滚) / 三重对账（见 docs/order-sharding-design.md §7）",
 		Func: func(ctx context.Context, parser *gcmd.Parser) error {
 			// 同 reindex：GoFrame 的 gcmd 会把多余的位置参数当成多级命令名，只能用选项传参
 			var (
@@ -277,6 +277,21 @@ func init() {
 				}
 				g.Log().Infof(ctx, "老主键映射登记 %d 行，日汇总回填 %d 行",
 					report.ShardMapRows, report.StatsRows)
+				return nil
+
+			case "restore":
+				// Phase 5 回滚：把分片数据回灌主表。方向与 migrate 相反，故两者互斥。
+				report, err := ordersLogic.RestoreToBase(ctx, from, to, batch)
+				if err != nil {
+					return err
+				}
+				var total int64
+				for _, m := range report.Months {
+					g.Log().Infof(ctx, "回灌 %s %s：影响 %d 行", m.Month, m.Table, m.Rows)
+					total += m.Rows
+				}
+				g.Log().Infof(ctx, "回灌完成，共影响 %d 行；建议接着跑 --action=verify 确认两边一致，"+
+					"确认后再把 orderShard.mode 改回 single", total)
 				return nil
 
 			case "verify":

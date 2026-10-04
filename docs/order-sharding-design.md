@@ -681,8 +681,38 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 | `?order_no=x` | 两种模式下都能精确查到（monthly 下走单号对应的单分片） |
 | 单测 | 新增模式矩阵用例；显式设定模式，不再受本地配置影响 |
 
-- 回滚：主表停写期间的新数据只在新分片 —— **必须在这之前确认无需回滚**。
-  主表在停写后仍是完整的历史快照，是 Phase 6 归档前的回滚依据。
+- 回滚：主表停写期间的新数据只在新分片 —— 用下面的 `restore` 回灌，主表在停写后仍是完整的历史快照。
+
+**回滚工具：`shard --action=restore`（分片 → 主表）**
+
+```bash
+# ① 仍在 monthly 下回灌（读路径不受影响，主表逐步追平）
+./main shard --action=restore --from=2026-08 --to=2026-10
+# ② 确认主表与分片一致
+./main shard --action=verify --from=2026-08 --to=2026-10
+# ③ 再把 orderShard.mode 改回 single
+```
+
+顺序不能反：**先切 single 会让停写期间产生的新单在主表里查不到**（single 下点查不回落到分片）。
+因此 `restore` 只在 `monthly` 下允许、`migrate` 只在非 `monthly` 下允许 —— 两个方向互斥，各有守卫。
+
+**⚠️ 回灌暴露出的主键重复问题（Phase 5 的遗留阻塞）**
+
+`restore` 与 `migrate` 都是「按主键做全列 upsert」的复制工具，因此它们隐含了一个
+**比文档原先写的更强的前提**：主键不只要在「被引用的表」里全局唯一，
+而是要在**主表与每个分片之间都不重复**。否则 upsert 会按主键命中并**覆盖无关的行**。
+
+实测踩到了：`tx_sub_orders.id` 是 `AUTO_INCREMENT`，而分片表由 `CREATE TABLE ... LIKE` 建出、
+**各自从 1 开始计数** —— 202610 分片的第一批子订单拿到 id `1..6`，
+正好与主表的 8 月种子数据撞主键；一次 `restore` 就把那 6 行 8 月数据覆盖成了 10 月测试单的内容。
+（`tx_order_logs.id` 同理。`tx_orders` / `tx_order_items` 在 Phase 2 已改为应用生成的全局唯一 ID，没有这个问题。）
+
+- **已加的护栏**：两个复制工具在复制前做**主键冲突预检**（按业务键判断「同一 id 是否同一行」：
+  订单看 `order_no`、子订单看 `sub_order_no`、日志看 `order_id + created_at`），
+  命中即拒绝并报出冲突行数，不再静默覆盖。
+- **尚未修的根因**：这两张表的主键仍是各表自增。在修掉之前，**202610 的分片数据无法安全回灌**
+  （预检会拒绝），也就是 Phase 5 的回滚还差最后一步。修法是把它们也改成应用生成的全局唯一 ID
+  （与订单/明细一致），涉及 gf-eshop 的 ID 生成与 std-eshop-db 的 DDL（基线 + 一份前向迁移）。
 
 ### Phase 6：归档旧表
 
@@ -701,7 +731,7 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 | Phase 2 | 删除分片表 | 无（主表未动） | 分钟级 |
 | Phase 3 | 关双写开关 | 无（主表是真相源） | 秒级 |
 | Phase 4 | `orderShard.readShardsPercent` 置 0（或 `mode` 改回 `single`） | 无 | **秒级** |
-| Phase 5 | 重启双写 | 停写期间新单只在分片，需手工回灌 | 小时级 |
+| Phase 5 | `shard --action=restore` 回灌 + 改回 `single` | 停写期间新单只在分片，回灌后主表追平（**前置：主键不重复**，见 §7 Phase 5） | 分钟级 |
 | Phase 6 | `RENAME` 回旧名 | 无（30 天窗口内） | 分钟级 |
 
 **核心保障**：Phase 6 之前**旧表始终是完整的**，所以前五个阶段随时可以「拔开关回落」。

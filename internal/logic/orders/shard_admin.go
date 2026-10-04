@@ -273,19 +273,88 @@ func migrateTable(ctx context.Context, base string, sh shard, span monthSpan, ba
 	if err != nil {
 		return 0, err
 	}
+	return copyMonthRows(ctx, base, sh.table(base), span, batch, upsert)
+}
+
+// mirrorCopyKey 各表用来判断「同一个 id 是不是同一行业务数据」的业务键（%s 为表别名）。
+//
+// 复制工具是按主键做全列 upsert 的：如果两边 id 相同但业务键不同，
+// 说明主键在库间重复，upsert 会命中主键把**无关的行**覆盖掉 —— 静默毁数据。
+// 所以复制前必须先预检。
+//
+// 为什么会有重复主键：tx_sub_orders / tx_order_logs 的 id 仍是各表 AUTO_INCREMENT，
+// 而分片表是从主表 LIKE 出来的，各自从 1 开始计数。
+// 实测：202610 分片的子订单拿到 id 1..6，正好与 8 月的种子数据撞主键，
+// 一次回灌就把 6 行 8 月数据覆盖成了 10 月的内容（见 docs/order-sharding-design.md §5.3）。
+//
+// 订单与明细的主键由应用生成（全局唯一），撞 id 即同一行，故不在表里。
+// 用带索引的 %[1]s（同一个别名可能出现两次），避免 Sprintf 参数个数不匹配。
+var mirrorCopyKey = map[string]string{
+	tableOrders:    "%[1]s.order_no",
+	tableSubOrders: "%[1]s.sub_order_no",
+	tableOrderLogs: "CONCAT(%[1]s.order_id, '|', %[1]s.created_at)",
+}
+
+// assertNoIDCollision 复制前预检两表之间的主键冲突。
+//
+// 命中即拒绝：这种情况下「复制过去」和「不复制」都会留下不一致，
+// 唯一安全的做法是先把主键全局唯一化（或人工清理冲突行），再重跑。
+func assertNoIDCollision(ctx context.Context, srcTable, dstTable string) error {
+	base := logicalTableOf(srcTable, dstTable)
+	keyTmpl, ok := mirrorCopyKey[base]
+	if !ok {
+		return nil
+	}
+	v, err := g.DB().GetValue(ctx,
+		"SELECT COUNT(*) FROM `"+srcTable+"` s JOIN `"+dstTable+"` d ON s.id = d.id "+
+			"WHERE "+fmt.Sprintf(keyTmpl, "s")+" <> "+fmt.Sprintf(keyTmpl, "d"))
+	if err != nil {
+		return fmt.Errorf("主键冲突预检失败（%s vs %s）: %w", srcTable, dstTable, err)
+	}
+	if n := v.Int64(); n > 0 {
+		return errcode.Newf(errcode.CodeShardMaintenanceRefused,
+			"%s 与 %s 存在 %d 个重复主键（同一 id 指向不同业务行）："+
+				"复制会按主键覆盖无关数据，已拒绝。请先让主键全局唯一再重试",
+			srcTable, dstTable, n)
+	}
+	return nil
+}
+
+// logicalTableOf 从「主表名 / 分片表名」反推逻辑表名。
+func logicalTableOf(names ...string) string {
+	for _, n := range names {
+		for _, base := range shardedTables {
+			if n == base || strings.HasPrefix(n, base+"_") {
+				return base
+			}
+		}
+	}
+	return ""
+}
+
+// copyMonthRows 按主键区间分批把一个月的行从 srcTable 复制到 dstTable（全列覆盖）。
+//
+// 两个方向共用同一段逻辑：migrate 是「主表 → 分片」，
+// restore（Phase 5 回滚）是「分片 → 主表」。两侧列完全一致，
+// 所以 upsert 子句由调用方按逻辑表名算一次传进来即可。
+func copyMonthRows(
+	ctx context.Context, srcTable, dstTable string, span monthSpan, batch int, upsert string,
+) (int64, error) {
+	if err := assertNoIDCollision(ctx, srcTable, dstTable); err != nil {
+		return 0, err
+	}
 	var (
-		target = sh.table(base)
 		lastID int64
 		total  int64
 	)
 	for {
-		// 先取本批的最大 id，用它推进游标（不依赖分片表里已有的数据）
+		// 先取本批的最大 id，用它推进游标（不依赖目标表里已有的数据）
 		v, err := g.DB().GetValue(ctx,
-			"SELECT MAX(id) FROM (SELECT id FROM `"+base+"` "+
+			"SELECT MAX(id) FROM (SELECT id FROM `"+srcTable+"` "+
 				"WHERE created_at >= ? AND created_at < ? AND id > ? ORDER BY id LIMIT ?) t",
 			span.Start, span.End, lastID, batch)
 		if err != nil {
-			return total, fmt.Errorf("读取 %s(%s) 批次边界失败: %w", base, span.YM, err)
+			return total, fmt.Errorf("读取 %s(%s) 批次边界失败: %w", srcTable, span.YM, err)
 		}
 		if v.IsNil() || v.Int64() == 0 {
 			return total, nil
@@ -293,11 +362,12 @@ func migrateTable(ctx context.Context, base string, sh shard, span monthSpan, ba
 		batchMax := v.Int64()
 
 		res, err := g.DB().Exec(ctx,
-			"INSERT INTO `"+target+"` SELECT * FROM `"+base+"` "+
+			"INSERT INTO `"+dstTable+"` SELECT * FROM `"+srcTable+"` "+
 				"WHERE created_at >= ? AND created_at < ? AND id > ? AND id <= ?"+upsert,
 			span.Start, span.End, lastID, batchMax)
 		if err != nil {
-			return total, fmt.Errorf("迁移 %s(%s) 区间 (%d, %d] 失败: %w", base, span.YM, lastID, batchMax, err)
+			return total, fmt.Errorf("复制 %s → %s(%s) 区间 (%d, %d] 失败: %w",
+				srcTable, dstTable, span.YM, lastID, batchMax, err)
 		}
 		if affected, err := res.RowsAffected(); err == nil {
 			total += affected
@@ -366,7 +436,65 @@ type VerifyCheck struct {
 	Detail string
 }
 
-// VerifyShards 对 [from, to] 的每个分片做三重对账：行数、金额合计、全字段校验和。
+// ── 回灌（Phase 5 回滚） ──────────────────────────────────────────────────
+
+// RestoreReport 回灌结果汇总。
+type RestoreReport struct {
+	Months []MonthMigration
+}
+
+// RestoreToBase 把 [from, to] 的分片数据回灌主表 —— **Phase 5 的回滚动作**。
+//
+// 方向与 migrate 相反（分片 → 主表），因此两者互斥：
+//   - monthly（写只落分片）：允许，这正是回滚要做的；
+//   - single（主表是真相源）：拒绝 —— 此时分片可能落后，回灌会拿旧快照覆盖主表。
+//
+// 正确的回滚顺序（顺序错了会读到不存在的订单）：
+//
+//	① 仍在 monthly 下执行 restore（读路径不受影响，主表逐步追平）
+//	② --action=verify 确认主表与分片一致
+//	③ 再把 orderShard.mode 改回 single
+//
+// 反过来（先切 single）会让停写期间产生的新单在主表里查不到 —— single 下点查不回落到分片。
+//
+// 幂等：复用与迁移相同的全列覆盖，重复执行不会产生重复行，
+// 已经一致的行 RowsAffected 为 0（可用来判断「是否真的需要回灌」）。
+func RestoreToBase(ctx context.Context, from, to string, batch int) (*RestoreReport, error) {
+	if shardMode(ctx) != shardModeMonthly {
+		return nil, errcode.Newf(errcode.CodeShardMaintenanceRefused,
+			"restore 只能在 orderShard.mode=monthly 时执行：它的方向是「分片 → 主表」，"+
+				"single 模式下分片可能落后于主表，回灌会拿旧快照覆盖主表。"+
+				"回滚顺序应为 restore → verify → 再把 mode 改回 single")
+	}
+	if batch <= 0 {
+		batch = 5000
+	}
+	spans, err := parseMonthSpans(from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &RestoreReport{}
+	for _, span := range spans {
+		sh := shard{suffix: span.YM}
+		for _, base := range shardedTables {
+			upsert, err := upsertAllColumns(ctx, base)
+			if err != nil {
+				return report, err
+			}
+			rows, err := copyMonthRows(ctx, sh.table(base), base, span, batch, upsert)
+			if err != nil {
+				return report, err
+			}
+			report.Months = append(report.Months, MonthMigration{
+				Month: span.YM, Table: base, Rows: rows,
+			})
+		}
+	}
+	return report, nil
+}
+
+// VerifyShards/ VerifyShards 对 [from, to] 的每个分片做三重对账：行数、金额合计、全字段校验和。
 // 行数相同但内容不同是最危险的迁移事故，所以一定要比全字段校验和。
 func VerifyShards(ctx context.Context, from, to string) (*VerificationReport, error) {
 	// 对账是只读的，终态下仍然放行，但要讲清楚：主表已停写，
