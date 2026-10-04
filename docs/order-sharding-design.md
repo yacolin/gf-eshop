@@ -330,7 +330,7 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 | `PUT /orders/{order_no}/status` | 同上 | 无 |
 | 支付回调按 `order_no` 回写 | 同上 | 无 |
 | `POST /orders` 建单 | 定单一时间基准 → 落当前月分片 | 无 |
-| `GET /orders?order_no=x` | **退化为分片内条件查询**（其实等价于点查） | 无 |
+| `GET /orders?order_no=x` | ✅ **已实现**（Phase 5）：等价于点查，直接路由到单号内嵌时间对应的分片，单分片内 offset/keyset 都精确；两种模式行为一致 | 无 |
 | `GET /orders?page&page_size` | 保留：single 下**回落主表**（老客户端不受影响）；monthly 下明确报 `7004`（offset 无法跨片正确归并） | ⚠️ monthly 下行为变更 |
 | `GET /orders?size&cursor` | ✅ **已实现**（Phase 2 定义、Phase 4 跨片）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`。分片模式下各活跃片各取一页 → 按 id 倒序归并 → 取前 `size` 条（keyset 的正确性来自「全局前 N 条必在某片的局部前 N 条里」） | 新增（与 products 的游标约定一致） |
 | `GET /orders?user_id=x` 无时间窗 | 默认**强制近 N 个月**（如 12 个月），否则 fan-out 全部活跃片 | ⚠️ 行为变更 |
@@ -636,12 +636,53 @@ redis-cli KEYS 'order:shard:fallback:*'   # 读灰度回落主表的次数（应
 
 - 回滚：`readShardsPercent` 置 0（或 `mode` 改回 `single`）即秒级回落主表。
 
-### Phase 5：停双写
+### Phase 5：停双写 ✅ 已完成
 
-- 动作：确认全量切读稳定后，`mode: monthly` + `dualWrite: false`，停止写主表。
-- ⚠️ **前置**：前端必须已经改用游标分页 —— `monthly` 下 offset 分页会返回 `7004`（见 §2.6）。
-  实测 `monthly` 终态已通（建单/改状态/支付回写只落分片）。
+- 动作：`mode: monthly` + `dualWrite: false`，停止写主表。
+- **终态语义**（与灰度期的区别）：
+  - 写：只落分片，不再镜像；
+  - 读：只走分片，**不回落主表** —— 主表已停写，回落只会读到过期数据；
+  - 无 `order_no` 的 offset 分页返回 `7004`；**带 `order_no` 的列表等价于点查，仍精确**（见下）。
+- ⚠️ **前置已解除**：前端订单页已改用游标分页（`gf-eshop-fe` 提交 `6398ed6`）。
+  另一个前端仓库 miniprogram **目前没有订单页面**（只有 index/product），无需改动 ——
+  这修正了 §2.6 原先「两个仓库都要跟进」的说法。
+
+**加固：终态下的运维动作**
+
+- `shard --action=migrate` **禁止执行**（返回 `7006`）：迁移方向是「主表 → 分片」，
+  主表停写后再跑就会拿冻结的旧快照把分片里的新数据覆盖掉 —— 不可逆的数据损坏。
+  要回灌必须先 `mode` 改回 `single`，并明确那是回滚动作。
+- `shard --action=verify` 仍放行（只读），但会明确告警：切换之后发生的状态变更只落分片，
+  所以「主表 vs 分片」出现差异是**预期**的，不代表损坏 —— 此时它的价值是
+  「一眼看出哪些行在切换后被改过」。
+
+**带 `order_no` 的列表查询要单独处理**
+
+`GET /orders?order_no=x`（不带分页参数）在 `monthly` 下原本会落到 offset 分支被拒，
+但它其实等价于点查：现在直接路由到单号内嵌时间对应的那一个月，
+单分片内 offset 与 keyset 都精确，两种模式行为一致。
+
+**测试与本地配置解耦（顺带修掉的隐患）**
+
+单测原先隐式依赖开发机本地的 `manifest/config/config.yaml`：本地一切到 `monthly`，
+`TestSingleModeRoutesToBaseTable` 就失败 —— 测试结果取决于「谁的机器」。
+现在模式相关的用例都用 `gcfg.AdapterFile.Set` 在**内存里**声明自己要测的模式，
+并补了 monthly 路由矩阵、双写/灰度开关的用例；接口套件也改为**游标优先**，
+新增 3.7 覆盖「single 回落主表 / monthly 报 `7004`」两种预期，因此两种模式下都能跑。
+
+**实测**
+
+| 项 | 结果 |
+|----|------|
+| 接口套件 | `single` 与 `monthly` 两种模式**都是 37/37** |
+| `monthly` 写入 | 建单/改状态/支付回写只落分片、主表行数不变（Phase 4 已验证） |
+| `migrate` 守卫 | `monthly` 下执行 → 拒绝并返回 `7006`，退出码 1 |
+| `verify` 守卫 | `monthly` 下执行 → 告警说明差异属预期，然后正常出对账结果 |
+| `?order_no=x` | 两种模式下都能精确查到（monthly 下走单号对应的单分片） |
+| 单测 | 新增模式矩阵用例；显式设定模式，不再受本地配置影响 |
+
 - 回滚：主表停写期间的新数据只在新分片 —— **必须在这之前确认无需回滚**。
+  主表在停写后仍是完整的历史快照，是 Phase 6 归档前的回滚依据。
 
 ### Phase 6：归档旧表
 
