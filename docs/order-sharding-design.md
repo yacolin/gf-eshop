@@ -337,7 +337,7 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 | `GET /orders?order_no=x` | ✅ **已实现**（Phase 5）：等价于点查，直接路由到单号内嵌时间对应的分片，单分片内 offset/keyset 都精确；两种模式行为一致 | 无 |
 | `GET /orders?page&page_size` | 保留：single 下**回落主表**（老客户端不受影响）；monthly 下明确报 `7004`（offset 无法跨片正确归并） | ⚠️ monthly 下行为变更 |
 | `GET /orders?size&cursor` | ✅ **已实现**（Phase 2 定义、Phase 4 跨片）：keyset 分页，`cursor=base64(末位订单ID)`、排序固定 `id DESC`、返回 `next_cursor`、`total=-1`。分片模式下各活跃片各取一页 → 按 id 倒序归并 → 取前 `size` 条（keyset 的正确性来自「全局前 N 条必在某片的局部前 N 条里」） | 新增（与 products 的游标约定一致） |
-| `GET /orders?user_id=x` 无时间窗 | 默认**强制近 N 个月**（如 12 个月），否则 fan-out 全部活跃片 | ⚠️ 行为变更 |
+| `GET /orders?user_id=x` 无时间窗 | ✅ **已实现**：`month=YYYYMM`（路由单分片）/ `created_from`+`created_to`（区间）/ 都不传则**默认近 12 个月**（`orderShard.defaultWindowMonths`）。响应**回显**生效区间与命中月份（`applied_from`/`applied_to`/`applied_months`/`window_defaulted`） | ⚠️ 行为变更（不带时间参数时只看近 12 个月） |
 | dashboard 全部聚合 | ✅ **已实现**（Phase 4）：5 项聚合**跨片 fan-out 归并**（订单数/营收求和；趋势按日、状态按状态、热销按商品累加）。**没有**改走日汇总表，原因见 §5.6 | 需跨片归并 |
 | 「今天待发货」这类**按业务时间+状态**的运营检索 | `created_at` 分表**无法覆盖** → **必须走 ES**（§5.7） | 新增能力 |
 | 库存 `sp_inventories`、商品 `sp_products` | 不分片 | 无 |
@@ -349,6 +349,32 @@ payments/refunds/deliveries/after_sales 的引用）。处理方式：
 
 > 这印证了 CLAUDE.md 里那句话：**ES 是加速器，不是唯一真相源**。
 > 分表后它同时变成「跨分片检索层」—— 详情/写走分片 MySQL，列表/运营检索走 ES。
+
+**为什么列表必须有时间范围（以及 month 顺带带来的好处）**
+
+分片按 `created_at` 分月，时间范围就是分片选择器；不带范围就只能对**全部活跃分片** fan-out。
+实测（用 general log 数真实的分片查询次数，当时 3 个活跃分片）：
+
+| 请求 | 分片查询次数 |
+|------|--------------|
+| `?month=202608&size=20` | **1**（只查 202608） |
+| `?created_from=2026-08-01&created_to=2026-09-30&size=5` | **2**（8/9 两月各一次） |
+| `?size=5`（默认窗口近 12 个月） | **3**（3 个分片都落在窗口内） |
+
+按目标规模（10 万单/日 × 保留 3 年 = 36 片）算，就是 **1 次 vs 36 次/页**。
+
+三条由此确定的语义：
+
+1. **优先级**：`month` > `created_from/to` > 默认窗口。`month` 最省，直接路由单分片。
+2. **`order_no` 点查不套时间窗**：客服拿单号找单不能被「默认只看近 12 个月」挡住
+   （单号里含时间，路由本来就能定位到单分片）。这条是实测中发现的 bug ——
+   最初只在**路由**上绕开了窗口、**过滤条件**仍在生效，结果查不到非当月的单。
+3. **带 `month` 后 offset 分页恢复精确**：单分片内的 `page/page_size` + `total` 是准的，
+   所以没改游标的老页面只要带上月份就能继续用（不带则跨片，返回 `7004`）。
+   此时**不能**回落主表 —— 那会返回与该月份无关的行，所以「窗口内没有分片」就是空结果。
+
+> 口径提醒：月份按**下单时间**（`created_at`，即分片键）。若要按「支付/发货时间」筛，
+> 那不是分片键、无法路由，只能全片 fan-out 或走 ES（§5.7）。
 
 ### 5.6 汇总表（dashboard 的解）
 
@@ -569,6 +595,7 @@ CREATE TABLE tx_order_daily_stats (
 | `orderShard.dualWrite` | `false` | 写主表的同时把同一订单镜像进分片 |
 | `orderShard.shadowReadPercent` | `0` | 影子读抽样比例（0~100），抽样比对主表与分片 |
 | `orderShard.readShardsPercent` | `0` | 读侧灰度比例（0~100），见 Phase 4 |
+| `orderShard.defaultWindowMonths` | `12` | 列表未传时间参数时默认回溯的月数（决定 fan-out 多少个分片） |
 
 影子读抽样是**确定性**的（`crc32(order_no) % 100`），同一条订单每次都会命中同一样本，
 便于复现；且它只记日志与计数，绝不改变接口返回值。
